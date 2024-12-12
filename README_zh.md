@@ -26,31 +26,31 @@
   - 友好的错误提示
 - 作为 Go 库使用
   - 简洁的 API 设计
-  - 完整���类型安全
+  - 完整的类型安全
   - 丰富的示例代码
   - 详细的文档说明
 
 ## 安装
 
-### 命令行工具
+### Homebrew（推荐）
+
+```bash
+# 添加 tap
+brew tap davidhoo/tap
+
+# 安装 jsonpath
+brew install jsonpath
+```
+
+### Go 安装
 
 ```bash
 go install github.com/davidhoo/jsonpath/cmd/jp@latest
 ```
 
-或从源码编译：
+### 手动安装
 
-```bash
-git clone https://github.com/davidhoo/jsonpath.git
-cd jsonpath
-go build -o jp cmd/jp/main.go
-```
-
-### Go 库
-
-```bash
-go get github.com/davidhoo/jsonpath
-```
+从[发布页面](https://github.com/davidhoo/jsonpath/releases)下载适合您平台的二进制文件。
 
 ## 命令行使用
 
@@ -188,7 +188,7 @@ func main() {
 
 ### 结果处理
 
-根据查询结果的类型，需要进行相应的类型断言：
+根��查询结果的类型，需要进行相应的类型断言：
 
 ```go
 // 单个值结果
