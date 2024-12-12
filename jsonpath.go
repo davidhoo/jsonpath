@@ -30,20 +30,29 @@ func Compile(path string) (*JSONPath, error) {
 	return &JSONPath{segments: segments}, nil
 }
 
+// 检查段是否包含数组操作
+func isArrayOperation(segStr string) bool {
+	// 如果不包含方括号，只需检查是否是递归下降
+	if !strings.Contains(segStr, "[") {
+		return strings.Contains(segStr, "..")
+	}
+
+	// 检查是否是简单的单个索引访问
+	return strings.Contains(segStr, ":") ||
+		strings.Contains(segStr, "*") ||
+		strings.Contains(segStr, "?") ||
+		strings.Contains(segStr, ",")
+}
+
 // 检查是否有数组操作
 func (jp *JSONPath) hasArrayOperation() bool {
+	if len(jp.segments) <= 1 {
+		return false
+	}
+
+	// 检查除最后一个段外的所有段
 	for _, seg := range jp.segments[:len(jp.segments)-1] {
-		segStr := seg.String()
-		if strings.Contains(segStr, "[") {
-			// 检查是否是简单的单个索引访问
-			if !strings.Contains(segStr, ":") &&
-				!strings.Contains(segStr, "*") &&
-				!strings.Contains(segStr, "?") &&
-				!strings.Contains(segStr, ",") {
-				continue
-			}
-			return true
-		} else if strings.Contains(segStr, "..") {
+		if isArrayOperation(seg.String()) {
 			return true
 		}
 	}
@@ -55,68 +64,78 @@ func (jp *JSONPath) lastSegmentNeedsArray() bool {
 	if len(jp.segments) == 0 {
 		return false
 	}
-	lastSeg := jp.segments[len(jp.segments)-1]
-	lastSegStr := lastSeg.String()
-	return strings.Contains(lastSegStr, ":") || // 切片操作
-		strings.Contains(lastSegStr, "*") || // 通配符
-		strings.Contains(lastSegStr, "?") || // 过滤器
-		strings.Contains(lastSegStr, ",") || // 多索引选择
-		strings.HasPrefix(lastSegStr, "..") // 递归下降
+	return isArrayOperation(jp.segments[len(jp.segments)-1].String())
+}
+
+// 处理单个结果
+func processSingleResult(result interface{}) interface{} {
+	// 如果是字符串，直接返回
+	if str, ok := result.(string); ok {
+		return str
+	}
+	return result
 }
 
 // 处理执行结果
 func (jp *JSONPath) processResult(current []interface{}) (interface{}, error) {
 	// 如果没有段，直接返回原始数据
-	if len(jp.segments) == 0 {
+	if len(jp.segments) == 0 && len(current) > 0 {
 		return current[0], nil
 	}
 
-	// 以下情况需要返回数组：
-	// 1. 结果包含多个元素
-	// 2. 最后一个段需要数组结果
-	// 3. 路径中包含任何数组操作（除了单个索引访问）
-	if len(current) > 1 || jp.lastSegmentNeedsArray() || jp.hasArrayOperation() {
-		if current == nil {
-			current = make([]interface{}, 0)
-		}
-		return current, nil
-	}
-
-	// 对于单个结果，如果是字符串，直接返回
-	if len(current) == 1 {
-		if str, ok := current[0].(string); ok {
-			return str, nil
-		}
-		return current[0], nil
-	}
-
-	// 其他情况返回空数组
+	// 确保 current 不为 nil
 	if current == nil {
 		current = make([]interface{}, 0)
 	}
+
+	// 需要返回数组的情况：
+	// 1. 结果包含多个元素
+	// 2. 最后一个段需要数组结果
+	// 3. 路径中包含数组操作
+	if len(current) > 1 || jp.lastSegmentNeedsArray() || jp.hasArrayOperation() {
+		return current, nil
+	}
+
+	// 单个结果的处理
+	if len(current) == 1 {
+		return processSingleResult(current[0]), nil
+	}
+
+	// 空结果返回空数组
 	return current, nil
+}
+
+// 执行段的评估
+func (jp *JSONPath) evaluateSegment(seg segment, current []interface{}) ([]interface{}, error) {
+	var nextCurrent []interface{}
+	var lastErr error
+
+	for _, item := range current {
+		results, err := seg.evaluate(item)
+		if err != nil {
+			lastErr = err
+			continue // 跳过错误，继续处理其他项
+		}
+		nextCurrent = append(nextCurrent, results...)
+	}
+
+	if len(nextCurrent) == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+	return nextCurrent, nil
 }
 
 // Execute 执行 JSONPath 查询
 func (jp *JSONPath) Execute(data interface{}) (interface{}, error) {
-	var current []interface{} = []interface{}{data}
-	var lastErr error
+	current := []interface{}{data}
 
 	// 执行每个段的查询
 	for _, seg := range jp.segments {
-		var nextCurrent []interface{}
-		for _, item := range current {
-			results, err := seg.evaluate(item)
-			if err != nil {
-				lastErr = err
-				continue // 跳过错误，继续处理其他项
-			}
-			nextCurrent = append(nextCurrent, results...)
+		var err error
+		current, err = jp.evaluateSegment(seg, current)
+		if err != nil {
+			return nil, err
 		}
-		if len(nextCurrent) == 0 && lastErr != nil {
-			return nil, lastErr
-		}
-		current = nextCurrent
 	}
 
 	return jp.processResult(current)
