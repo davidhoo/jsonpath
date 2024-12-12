@@ -22,18 +22,19 @@ var (
 	optionStyle  = color.New(color.FgHiMagenta)
 
 	// JSON 元素颜色
-	braceStyle     = color.New(color.FgYellow)    // {} 括号
-	bracketStyle   = color.New(color.FgYellow)    // [] 括号
-	keyStyle       = color.New(color.FgHiCyan)    // 键名
-	stringStyle    = color.New(color.FgGreen)     // 字符串值 (改为普通绿色，区别于键名的亮青色)
-	numberStyle    = color.New(color.FgHiBlue)    // 数字值
-	boolStyle      = color.New(color.FgHiMagenta) // 布尔值
-	nullStyle      = color.New(color.FgRed)       // null 值
-	separatorStyle = color.New(color.FgWhite)     // 分隔符 , :
+	braceStyle   = color.New(color.FgHiYellow)  // {} 大括号，使用亮黄色
+	bracketStyle = color.New(color.FgYellow)    // [] 方括号，使用普通黄色
+	keyStyle     = color.New(color.FgHiCyan)    // 键名
+	stringStyle  = color.New(color.FgGreen)     // 字符串值
+	numberStyle  = color.New(color.FgHiBlue)    // 数字值
+	boolStyle    = color.New(color.FgHiMagenta) // 布尔值
+	nullStyle    = color.New(color.FgRed)       // null 值
+	commaStyle   = color.New(color.FgBlue)      // 逗号
+	colonStyle   = color.New(color.FgHiBlue)    // 冒号
 
 	// 字符串引号颜色
-	keyQuoteStyle   = color.New(color.FgHiCyan) // 键名的引号
-	valueQuoteStyle = color.New(color.FgGreen)  // 值的引号
+	keyQuoteStyle   = color.New(color.FgHiCyan) // 键名的引号，与键名颜色相同
+	valueQuoteStyle = color.New(color.FgGreen)  // 值的引号，与字符串值颜色相同
 )
 
 const version = "1.0.0"
@@ -146,13 +147,13 @@ func colorizeJSONString(jsonStr string) string {
 			}
 		case ',':
 			if !inString {
-				result.WriteString(separatorStyle.Sprint(string(c)))
+				result.WriteString(commaStyle.Sprint(string(c)))
 			} else {
 				result.WriteRune(c)
 			}
 		case ':':
 			if !inString {
-				result.WriteString(separatorStyle.Sprint(string(c)))
+				result.WriteString(colonStyle.Sprint(string(c)))
 			} else {
 				result.WriteRune(c)
 			}
