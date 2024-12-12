@@ -57,11 +57,11 @@ Download the appropriate binary for your platform from the [releases page](https
 ### Basic Usage
 
 ```bash
-jp -p <jsonpath_expression> [-f <json_file>] [-c]
+jp [-p <jsonpath_expression>] [-f <json_file>] [-c]
 ```
 
 Options:
-- `-p` JSONPath expression (required)
+- `-p` JSONPath expression (if not specified, output entire JSON)
 - `-f` JSON file path (reads from stdin if not specified)
 - `-c` Compact output (no formatting)
 - `-h` Show help information
@@ -70,14 +70,17 @@ Options:
 ### Examples
 
 ```bash
-# Read from file
+# Output entire JSON
+jp -f data.json
+
+# Query specific path
 jp -f data.json -p '$.store.book[*].author'
 
 # Read from stdin
 echo '{"name": "John"}' | jp -p '$.name'
 
 # Compact output
-jp -f data.json -p '$.store.book[0]' -c
+jp -f data.json -c
 ```
 
 ## Go Library Usage
