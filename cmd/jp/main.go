@@ -1,26 +1,46 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/davidhoo/jsonpath"
 	"github.com/fatih/color"
 )
 
-// 定义颜色
+// 定义颜色函数
 var (
-	errorColor   = color.New(color.FgRed).SprintFunc()
+	// 错误和成功提示颜色
+	errorColor   = color.New(color.FgRed, color.Bold).SprintfFunc()
 	successColor = color.New(color.FgGreen).SprintFunc()
 	pathColor    = color.New(color.FgCyan).SprintFunc()
+
+	// JSON 元素颜色
+	braceColor      = color.New(color.FgMagenta).SprintFunc() // {} 大括号
+	bracketColor    = color.New(color.FgYellow).SprintFunc()  // [] 方括号
+	commaColor      = color.New(color.FgWhite).SprintFunc()   // 逗号
+	colonColor      = color.New(color.FgWhite).SprintFunc()   // 冒号
+	keyColor        = color.New(color.FgCyan).SprintFunc()    // 键名
+	stringColor     = color.New(color.FgGreen).SprintFunc()   // 字符串值
+	numberColor     = color.New(color.FgBlue).SprintFunc()    // 数字值
+	booleanColor    = color.New(color.FgYellow).SprintFunc()  // 布尔值
+	nullColor       = color.New(color.FgRed).SprintFunc()     // null 值
+	keyQuoteColor   = color.New(color.FgMagenta).SprintFunc() // 键名的引号
+	valueQuoteColor = color.New(color.FgGreen).SprintFunc()   // 值的引号
 )
 
 // 命令行参数
 type config struct {
 	path    string
+	expr    string
 	file    string
 	compact bool
 	noColor bool
@@ -33,9 +53,10 @@ type config struct {
 const version = "1.0.1"
 
 // 帮助信息
-const usage = `Usage: jp [options] <jsonpath>
+const usage = `Usage: jp [options] [jsonpath]
 
 Options:
+  -p, --path       JSONPath expression (optional, output full JSON if not specified)
   -f, --file       JSON file path (if not specified, read from stdin)
   -c, --compact    Output compact JSON instead of pretty-printed
   -n, --no-color   Disable colored output
@@ -44,11 +65,13 @@ Options:
   -v, --version    Show version information
 
 Examples:
-  jp -f data.json '$.store.book[0].title'     # Get the title of the first book from file
-  jp -f data.json '$.store.book[*].author'    # Get all book authors from file
-  jp '$.store.book[?(@.price < 10)].title'    # Get titles of books cheaper than 10
-  jp '$.store..price'                         # Get all prices in the store
-  cat data.json | jp '$.store.book[0]'        # Read JSON from stdin
+  jp -f data.json                               # Output entire JSON from file
+  jp -f data.json -p '$.store.book[0].title'    # Get the title of the first book
+  jp -f data.json '$.store.book[*].author'      # Get all book authors
+  jp -p '$.store.book[?(@.price < 10)].title'   # Get titles of books cheaper than 10
+  jp '$.store..price'                           # Get all prices in the store
+  cat data.json | jp                            # Output entire JSON from stdin
+  cat data.json | jp '$.store.book[0]'          # Get first book from stdin
 
 For more information and examples, visit:
 https://github.com/davidhoo/jsonpath`
@@ -85,6 +108,8 @@ func main() {
 func parseFlags() *config {
 	cfg := &config{}
 
+	flag.StringVar(&cfg.expr, "p", "", "JSONPath expression")
+	flag.StringVar(&cfg.expr, "path", "", "JSONPath expression")
 	flag.StringVar(&cfg.file, "f", "", "JSON file path")
 	flag.StringVar(&cfg.file, "file", "", "JSON file path")
 	flag.BoolVar(&cfg.compact, "c", false, "Output compact JSON")
@@ -105,7 +130,9 @@ func parseFlags() *config {
 	flag.Parse()
 
 	// 获取 JSONPath 表达式
-	if flag.NArg() > 0 {
+	if cfg.expr != "" {
+		cfg.path = cfg.expr
+	} else if flag.NArg() > 0 {
 		cfg.path = flag.Arg(0)
 	}
 
@@ -124,36 +151,31 @@ func handleSpecialCommands(cfg *config) bool {
 		return true
 	}
 
-	if cfg.path == "" {
-		fmt.Fprintln(os.Stderr, errorColor("Error: JSONPath expression is required"))
-		fmt.Println(usage)
-		os.Exit(1)
-	}
-
 	return false
 }
 
 // 读取输入
 func readInput(filePath string) (interface{}, error) {
-	var bytes []byte
-	var err error
+	var reader io.Reader
 
 	if filePath != "" {
 		// 从文件读取
-		bytes, err = os.ReadFile(filePath)
+		file, err := os.Open(filePath)
 		if err != nil {
-			return nil, fmt.Errorf("reading file: %w", err)
+			return nil, fmt.Errorf("opening file: %w", err)
 		}
+		defer file.Close()
+		reader = file
 	} else {
 		// 从标准输入读取
-		bytes, err = io.ReadAll(os.Stdin)
-		if err != nil {
-			return nil, fmt.Errorf("reading stdin: %w", err)
-		}
+		reader = os.Stdin
 	}
 
+	// 使用 decoder 直接解码 JSON
 	var data interface{}
-	if err := json.Unmarshal(bytes, &data); err != nil {
+	decoder := json.NewDecoder(reader)
+	decoder.UseNumber()
+	if err := decoder.Decode(&data); err != nil {
 		return nil, fmt.Errorf("parsing JSON: %w", err)
 	}
 
@@ -162,6 +184,12 @@ func readInput(filePath string) (interface{}, error) {
 
 // 执行 JSONPath 查询
 func executeQuery(path string, data interface{}) (interface{}, error) {
+	// 如果没有指定 JSONPath 表达式，返回完整数据
+	if path == "" {
+		return data, nil
+	}
+
+	// 编译并执行 JSONPath 表达式
 	jp, err := jsonpath.Compile(path)
 	if err != nil {
 		return nil, fmt.Errorf("compiling JSONPath: %w", err)
@@ -177,30 +205,150 @@ func executeQuery(path string, data interface{}) (interface{}, error) {
 
 // 输出结果
 func outputResult(result interface{}, cfg *config) error {
-	var output []byte
-	var err error
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", cfg.indent)
+	enc.SetEscapeHTML(false)
 
-	if cfg.compact {
-		output, err = json.Marshal(result)
-	} else {
-		output, err = json.MarshalIndent(result, "", cfg.indent)
+	if err := enc.Encode(result); err != nil {
+		return fmt.Errorf("encoding JSON: %w", err)
 	}
 
-	if err != nil {
-		return fmt.Errorf("marshaling result: %w", err)
-	}
-
+	output := strings.TrimSuffix(buf.String(), "\n")
 	if cfg.noColor {
-		fmt.Println(string(output))
+		fmt.Println(output)
 	} else {
-		fmt.Println(successColor(string(output)))
+		fmt.Println(colorizeJSON(output))
 	}
 
 	return nil
 }
 
+// 给 JSON 添加颜色
+func colorizeJSON(jsonStr string) string {
+	var result strings.Builder
+	inString := false
+	inKey := false
+	var prev rune
+
+	for i := 0; i < len(jsonStr); {
+		r, size := utf8.DecodeRuneInString(jsonStr[i:])
+		rest := jsonStr[i:]
+
+		switch r {
+		case '"':
+			if prev != '\\' {
+				if !inString {
+					// 开始一个字符串
+					inString = true
+					if inKey {
+						result.WriteString(keyQuoteColor("\""))
+					} else {
+						result.WriteString(valueQuoteColor("\""))
+					}
+				} else {
+					// 结束一个字符串
+					inString = false
+					if inKey {
+						result.WriteString(keyQuoteColor("\""))
+						inKey = false
+					} else {
+						result.WriteString(valueQuoteColor("\""))
+					}
+				}
+			} else {
+				result.WriteRune(r)
+			}
+
+		case '{', '}':
+			if !inString {
+				result.WriteString(braceColor(string(r)))
+			} else {
+				result.WriteRune(r)
+			}
+
+		case '[', ']':
+			if !inString {
+				result.WriteString(bracketColor(string(r)))
+			} else {
+				result.WriteRune(r)
+			}
+
+		case ',':
+			if !inString {
+				result.WriteString(commaColor(string(r)))
+			} else {
+				result.WriteRune(r)
+			}
+
+		case ':':
+			if !inString {
+				result.WriteString(colonColor(string(r)))
+				inKey = false
+			} else {
+				result.WriteRune(r)
+			}
+
+		default:
+			if !inString {
+				// 检查布尔值和 null
+				switch {
+				case strings.HasPrefix(rest, "true"):
+					result.WriteString(booleanColor("true"))
+					i += len("true") - 1
+				case strings.HasPrefix(rest, "false"):
+					result.WriteString(booleanColor("false"))
+					i += len("false") - 1
+				case strings.HasPrefix(rest, "null"):
+					result.WriteString(nullColor("null"))
+					i += len("null") - 1
+				default:
+					// 检查数字
+					if unicode.IsDigit(r) || r == '-' || r == '.' {
+						numStr := string(r)
+						j := i + size
+						for j < len(jsonStr) {
+							next, nextSize := utf8.DecodeRuneInString(jsonStr[j:])
+							if unicode.IsDigit(next) || next == '.' || next == 'e' || next == 'E' || next == '-' || next == '+' {
+								numStr += string(next)
+								j += nextSize
+							} else {
+								break
+							}
+						}
+						if _, err := strconv.ParseFloat(numStr, 64); err == nil {
+							result.WriteString(numberColor(numStr))
+							i = j - 1
+						} else {
+							result.WriteRune(r)
+						}
+					} else {
+						result.WriteRune(r)
+					}
+				}
+			} else {
+				if inKey {
+					result.WriteString(keyColor(string(r)))
+				} else {
+					result.WriteString(stringColor(string(r)))
+				}
+			}
+		}
+
+		prev = r
+		i += size
+
+		// 检查是否是键名
+		if !inString && len(strings.TrimSpace(result.String())) > 0 {
+			inKey = strings.HasSuffix(strings.TrimSpace(result.String()), ":")
+		}
+	}
+
+	return result.String()
+}
+
 // 输出错误并退出
 func exitWithError(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, errorColor(format)+"\n", args...)
+	fmt.Fprintf(os.Stderr, errorColor(format+"\n", args...))
 	os.Exit(1)
 }
