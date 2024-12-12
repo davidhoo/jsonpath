@@ -1,6 +1,7 @@
 package jsonpath
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -257,6 +258,7 @@ func (s *filterSegment) evaluate(value interface{}) ([]interface{}, error) {
 	for _, item := range arr {
 		match, err := s.matchCondition(item)
 		if err != nil {
+			fmt.Printf("Filter error for item %v: %v\n", item, err)
 			continue // 跳过错误的项
 		}
 		if match {
@@ -268,16 +270,59 @@ func (s *filterSegment) evaluate(value interface{}) ([]interface{}, error) {
 }
 
 func (s *filterSegment) matchCondition(item interface{}) (bool, error) {
+	// 如果字段为空，直接比较值本身
+	if s.field == "" {
+		// 转换值为数字
+		var numValue float64
+		switch v := item.(type) {
+		case float64:
+			numValue = v
+		case int:
+			numValue = float64(v)
+		case json.Number:
+			var err error
+			numValue, err = v.Float64()
+			if err != nil {
+				return false, fmt.Errorf("invalid number: %v", v)
+			}
+		default:
+			return false, fmt.Errorf("value is not a number: %v", item)
+		}
+
+		// 比较值
+		switch s.operator {
+		case "<":
+			return numValue < s.value, nil
+		case "<=":
+			return numValue <= s.value, nil
+		case ">":
+			return numValue > s.value, nil
+		case ">=":
+			return numValue >= s.value, nil
+		case "==":
+			return numValue == s.value, nil
+		case "!=":
+			return numValue != s.value, nil
+		default:
+			return false, fmt.Errorf("unsupported operator: %s", s.operator)
+		}
+	}
+
 	// 检查项是否为对象
 	obj, ok := item.(map[string]interface{})
 	if !ok {
-		return false, fmt.Errorf("filter item must be object")
+		return false, fmt.Errorf("filter item must be object, got %T", item)
 	}
 
 	// 获取字段值
 	fieldValue, ok := obj[s.field]
 	if !ok {
-		return false, fmt.Errorf("field %s not found", s.field)
+		// 尝试移除字段名前的点
+		field := strings.TrimPrefix(s.field, ".")
+		fieldValue, ok = obj[field]
+		if !ok {
+			return false, fmt.Errorf("field %s not found in %v", s.field, obj)
+		}
 	}
 
 	// 转换字段值为数字
@@ -287,8 +332,14 @@ func (s *filterSegment) matchCondition(item interface{}) (bool, error) {
 		numValue = v
 	case int:
 		numValue = float64(v)
+	case json.Number:
+		var err error
+		numValue, err = v.Float64()
+		if err != nil {
+			return false, fmt.Errorf("invalid number: %v", v)
+		}
 	default:
-		return false, fmt.Errorf("field %s is not a number", s.field)
+		return false, fmt.Errorf("field %s is not a number (type: %T, value: %v)", s.field, fieldValue, fieldValue)
 	}
 
 	// 比较值
@@ -311,7 +362,10 @@ func (s *filterSegment) matchCondition(item interface{}) (bool, error) {
 }
 
 func (s *filterSegment) String() string {
-	return fmt.Sprintf("[?(@.%s %s %v)]", s.field, s.operator, s.value)
+	if s.field == "" {
+		return fmt.Sprintf("[?(@%s%v)]", s.operator, s.value)
+	}
+	return fmt.Sprintf("[?(@.%s%s%v)]", s.field, s.operator, s.value)
 }
 
 // 多索引段

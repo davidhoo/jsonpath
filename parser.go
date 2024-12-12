@@ -157,12 +157,12 @@ func parseBracketSegment(content string) (segment, error) {
 // 解析过滤器表达式
 func parseFilterSegment(content string) (segment, error) {
 	// 检查语法
-	if !strings.HasPrefix(content, "(@.") || !strings.HasSuffix(content, ")") {
+	if !strings.HasPrefix(content, "(@") || !strings.HasSuffix(content, ")") {
 		return nil, fmt.Errorf("invalid filter syntax: %s", content)
 	}
 
 	// 提取过滤器内容
-	content = content[3 : len(content)-1]
+	content = content[2 : len(content)-1]
 
 	// 解析操作符和值
 	operators := []string{"<=", ">=", "==", "!=", "<", ">"}
@@ -181,6 +181,13 @@ func parseFilterSegment(content string) (segment, error) {
 
 	if operator == "" {
 		return nil, fmt.Errorf("invalid filter operator: %s", content)
+	}
+
+	// 从字段中移除 @ 前缀
+	if strings.HasPrefix(field, "@.") {
+		field = strings.TrimPrefix(field, "@.")
+	} else if strings.HasPrefix(field, "@") {
+		field = ""
 	}
 
 	// 解析值
