@@ -23,4 +23,10 @@ go.work
 .vscode/
 *.swp
 *.swo
-.DS_Store 
+.DS_Store
+
+# Build output
+dist/
+
+# Release files
+release-notes.md 
