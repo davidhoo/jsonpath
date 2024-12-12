@@ -37,7 +37,7 @@ var (
 	valueQuoteStyle = color.New(color.FgGreen)   // 值的引号，使用绿色
 )
 
-const version = "1.0.0"
+const version = "1.0.1"
 
 func printUsage() {
 	titleStyle.Printf("jp - JSONPath Command Line Tool v%s\n", version)

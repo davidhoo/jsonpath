@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 BINARY_NAME="jp"
 PLATFORMS=("darwin/amd64" "darwin/arm64" "linux/amd64" "linux/arm64")
 
