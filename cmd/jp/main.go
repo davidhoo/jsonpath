@@ -115,7 +115,7 @@ func main() {
 		)
 		fmt.Fprintf(os.Stderr, "%s %s\n",
 			descColor("Version:"),
-			versionColor("v1.0.1"),
+			versionColor("v1.0.2"),
 		)
 	}
 
@@ -131,7 +131,7 @@ func main() {
 	if *version {
 		fmt.Printf("%s %s\n",
 			descColor("jp version"),
-			versionColor("v1.0.1"),
+			versionColor("v1.0.2"),
 		)
 		os.Exit(0)
 	}

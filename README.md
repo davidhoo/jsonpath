@@ -20,15 +20,31 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
   - Multiple indices (`[1,2,3]`)
   - Filter expressions (`[?(@.price < 10)]`)
 - Command Line Tool (`jp`)
-  - Colorized output for readability
+  - Beautiful colorized output
+  - Syntax highlighting for JSON
   - File and stdin input support
   - Formatted and compact output options
   - User-friendly error messages
+  - UTF-8 support with proper CJK display
 - Go Library
   - Clean API design
   - Type-safe operations
   - Rich examples
   - Comprehensive documentation
+
+## What's New in v1.0.2
+
+- Enhanced colorized output
+  - Beautiful syntax highlighting for JSON
+  - Colorful command-line interface
+  - Improved readability for nested structures
+- Better UTF-8 support
+  - Fixed CJK character display
+  - Proper handling of multi-byte characters
+- Improved filter expressions
+  - Fixed numeric comparisons
+  - Better error messages
+  - Support for direct value comparisons
 
 ## Installation
 
@@ -64,17 +80,21 @@ Options:
 - `-p` JSONPath expression (if not specified, output entire JSON)
 - `-f` JSON file path (reads from stdin if not specified)
 - `-c` Compact output (no formatting)
+- `--no-color` Disable colored output
 - `-h` Show help information
 - `-v` Show version information
 
 ### Examples
 
 ```bash
-# Output entire JSON
+# Output entire JSON with syntax highlighting
 jp -f data.json
 
 # Query specific path
 jp -f data.json -p '$.store.book[*].author'
+
+# Filter with conditions
+jp -f data.json -p '$.store.book[?(@.price > 10)]'
 
 # Read from stdin
 echo '{"name": "John"}' | jp -p '$.name'
