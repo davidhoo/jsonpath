@@ -32,25 +32,25 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
 
 ## Installation
 
-### Command Line Tool
+### Homebrew (Recommended)
+
+```bash
+# Add tap
+brew tap davidhoo/tap
+
+# Install jsonpath
+brew install jsonpath
+```
+
+### Go Install
 
 ```bash
 go install github.com/davidhoo/jsonpath/cmd/jp@latest
 ```
 
-Or build from source:
+### Manual Installation
 
-```bash
-git clone https://github.com/davidhoo/jsonpath.git
-cd jsonpath
-go build -o jp cmd/jp/main.go
-```
-
-### Go Library
-
-```bash
-go get github.com/davidhoo/jsonpath
-```
+Download the appropriate binary for your platform from the [releases page](https://github.com/davidhoo/jsonpath/releases).
 
 ## Command Line Usage
 
