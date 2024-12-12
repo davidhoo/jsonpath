@@ -98,6 +98,87 @@ func colorizeJSON(data interface{}, compact bool) (string, error) {
 	return colorizeJSONString(string(output)), nil
 }
 
+// 处理字符串字符
+func handleStringChar(c rune, inString bool, inKey bool, prev rune) (string, bool, bool) {
+	if prev != '\\' {
+		if !inString {
+			// 开始一个字符串
+			inString = true
+			if inKey {
+				return keyQuoteStyle.Sprint("\""), inString, inKey
+			}
+			return valueQuoteStyle.Sprint("\""), inString, inKey
+		}
+		// 结束一个字符串
+		inString = false
+		if inKey {
+			return keyQuoteStyle.Sprint("\""), inString, false
+		}
+		return valueQuoteStyle.Sprint("\""), inString, false
+	}
+	return string(c), inString, inKey
+}
+
+// 处理结构字符
+func handleStructureChar(c rune, inString bool) string {
+	if !inString {
+		switch c {
+		case '{', '}':
+			return braceStyle.Sprint(string(c))
+		case '[', ']':
+			return bracketStyle.Sprint(string(c))
+		case ',':
+			return commaStyle.Sprint(string(c))
+		case ':':
+			return colonStyle.Sprint(string(c))
+		}
+	}
+	return string(c)
+}
+
+// 处理布尔值和 null
+func handleLiteralPrefix(rest string, inString bool) (string, int) {
+	if !inString {
+		switch {
+		case strings.HasPrefix(rest, "true"):
+			return boolStyle.Sprint("true"), 3
+		case strings.HasPrefix(rest, "false"):
+			return boolStyle.Sprint("false"), 4
+		case strings.HasPrefix(rest, "null"):
+			return nullStyle.Sprint("null"), 3
+		}
+	}
+	return "", -1
+}
+
+// 处理数字
+func handleNumber(c rune, rest string, inString bool) (string, int) {
+	if !inString && (unicode.IsDigit(c) || c == '-' || c == '.') {
+		numStr := string(c)
+		i := 0
+		for j, next := range rest {
+			if unicode.IsDigit(next) || next == '.' || next == 'e' || next == 'E' || next == '-' || next == '+' {
+				numStr += string(next)
+				i = j
+			} else {
+				break
+			}
+		}
+		if _, err := fmt.Sscanf(numStr, "%f"); err == nil {
+			return numberStyle.Sprint(numStr), i
+		}
+	}
+	return "", -1
+}
+
+// 处理字符串内容
+func handleStringContent(c rune, inKey bool) string {
+	if inKey {
+		return keyStyle.Sprint(string(c))
+	}
+	return stringStyle.Sprint(string(c))
+}
+
 func colorizeJSONString(jsonStr string) string {
 	var result strings.Builder
 	inString := false
@@ -107,102 +188,49 @@ func colorizeJSONString(jsonStr string) string {
 
 	for i := 0; i < len(runes); i++ {
 		c := runes[i]
+		rest := string(runes[i:])
+
 		switch c {
 		case '"':
-			if prev != '\\' {
-				if !inString {
-					// 开始一个字符串
-					inString = true
-					// 检查是否是键名
-					inKey = len(strings.TrimSpace(result.String())) > 0 && strings.HasSuffix(strings.TrimSpace(result.String()), ":")
-					if inKey {
-						result.WriteString(keyQuoteStyle.Sprint("\""))
-					} else {
-						result.WriteString(valueQuoteStyle.Sprint("\""))
-					}
-				} else {
-					// 结束一个字符串
-					inString = false
-					if inKey {
-						result.WriteString(keyQuoteStyle.Sprint("\""))
-					} else {
-						result.WriteString(valueQuoteStyle.Sprint("\""))
-					}
-					inKey = false
-				}
-			} else {
-				result.WriteRune(c)
-			}
-		case '{', '}':
-			if !inString {
-				result.WriteString(braceStyle.Sprint(string(c)))
-			} else {
-				result.WriteRune(c)
-			}
-		case '[', ']':
-			if !inString {
-				result.WriteString(bracketStyle.Sprint(string(c)))
-			} else {
-				result.WriteRune(c)
-			}
-		case ',':
-			if !inString {
-				result.WriteString(commaStyle.Sprint(string(c)))
-			} else {
-				result.WriteRune(c)
-			}
-		case ':':
-			if !inString {
-				result.WriteString(colonStyle.Sprint(string(c)))
-			} else {
-				result.WriteRune(c)
-			}
+			str, newInString, newInKey := handleStringChar(c, inString, inKey, prev)
+			result.WriteString(str)
+			inString = newInString
+			inKey = newInKey
+
+		case '{', '}', '[', ']', ',', ':':
+			result.WriteString(handleStructureChar(c, inString))
+
 		default:
 			if !inString {
-				// 处理布尔值和 null
-				rest := string(runes[i:])
-				switch {
-				case strings.HasPrefix(rest, "true"):
-					result.WriteString(boolStyle.Sprint("true"))
-					i += 3 // 跳过剩余字符
-				case strings.HasPrefix(rest, "false"):
-					result.WriteString(boolStyle.Sprint("false"))
-					i += 4 // 跳过剩余字符
-				case strings.HasPrefix(rest, "null"):
-					result.WriteString(nullStyle.Sprint("null"))
-					i += 3 // 跳过剩余字符
-				case unicode.IsDigit(c) || c == '-' || c == '.':
-					// 处理数字
-					numStr := string(c)
-					j := i + 1
-					for j < len(runes) {
-						next := runes[j]
-						if unicode.IsDigit(next) || next == '.' || next == 'e' || next == 'E' || next == '-' || next == '+' {
-							numStr += string(next)
-							j++
-						} else {
-							break
-						}
-					}
-					if _, err := fmt.Sscanf(numStr, "%f"); err == nil {
-						result.WriteString(numberStyle.Sprint(numStr))
-						i = j - 1 // 更新索引
-					} else {
-						result.WriteRune(c)
-					}
-				default:
-					result.WriteRune(c)
+				// 检查布尔值和 null
+				if str, skip := handleLiteralPrefix(rest, inString); skip >= 0 {
+					result.WriteString(str)
+					i += skip
+					continue
 				}
+
+				// 检查数字
+				if str, skip := handleNumber(c, rest[1:], inString); skip >= 0 {
+					result.WriteString(str)
+					i += skip
+					continue
+				}
+
+				result.WriteRune(c)
 			} else {
-				if inKey {
-					result.WriteString(keyStyle.Sprint(string(c)))
-				} else {
-					result.WriteString(stringStyle.Sprint(string(c)))
-				}
+				result.WriteString(handleStringContent(c, inKey))
 			}
 		}
+
+		// 更新前一个字符
 		prev = c
+
+		// 检查是否是键名
+		if !inString && len(strings.TrimSpace(result.String())) > 0 {
+			inKey = strings.HasSuffix(strings.TrimSpace(result.String()), ":")
+		}
 	}
+
 	return result.String()
 }
 
