@@ -16,142 +16,169 @@ import (
 	"github.com/fatih/color"
 )
 
-// 定义颜色函数
 var (
-	// 错误和成功提示颜色
-	errorColor   = color.New(color.FgRed, color.Bold).SprintfFunc()
-	successColor = color.New(color.FgGreen).SprintFunc()
-	pathColor    = color.New(color.FgCyan).SprintFunc()
+	// 颜色定义
+	keyColor        = color.New(color.FgWhite).SprintFunc()
+	keyQuoteColor   = color.New(color.FgWhite).SprintFunc()
+	stringColor     = color.New(color.FgGreen).SprintFunc()
+	valueQuoteColor = color.New(color.FgGreen).SprintFunc()
+	numberColor     = color.New(color.FgBlue).SprintFunc()
+	booleanColor    = color.New(color.FgYellow).SprintFunc()
+	nullColor       = color.New(color.FgRed).SprintFunc()
+	braceColor      = color.New(color.FgHiBlack).SprintFunc()
+	bracketColor    = color.New(color.FgHiBlack).SprintFunc()
+	commaColor      = color.New(color.FgHiBlack).SprintFunc()
+	colonColor      = color.New(color.FgHiBlack).SprintFunc()
 
-	// JSON 元素颜色
-	braceColor      = color.New(color.FgMagenta).SprintFunc() // {} 大括号
-	bracketColor    = color.New(color.FgYellow).SprintFunc()  // [] 方括号
-	commaColor      = color.New(color.FgWhite).SprintFunc()   // 逗号
-	colonColor      = color.New(color.FgWhite).SprintFunc()   // 冒号
-	keyColor        = color.New(color.FgCyan).SprintFunc()    // 键名
-	stringColor     = color.New(color.FgGreen).SprintFunc()   // 字符串值
-	numberColor     = color.New(color.FgBlue).SprintFunc()    // 数字值
-	booleanColor    = color.New(color.FgYellow).SprintFunc()  // 布尔值
-	nullColor       = color.New(color.FgRed).SprintFunc()     // null 值
-	keyQuoteColor   = color.New(color.FgMagenta).SprintFunc() // 键名的引号
-	valueQuoteColor = color.New(color.FgGreen).SprintFunc()   // 值的引号
+	// 命令行帮助颜色
+	cmdColor     = color.New(color.FgCyan).SprintFunc()
+	flagColor    = color.New(color.FgYellow).SprintFunc()
+	descColor    = color.New(color.FgWhite).SprintFunc()
+	exampleColor = color.New(color.FgGreen).SprintFunc()
+	versionColor = color.New(color.FgMagenta).SprintFunc()
+	errorColor   = color.New(color.FgRed, color.Bold).SprintFunc()
 )
 
-// 命令行参数
+// 配置
 type config struct {
 	path    string
-	expr    string
 	file    string
 	compact bool
 	noColor bool
 	indent  string
-	help    bool
-	version bool
 }
 
-// 版本信息
-const version = "1.0.1"
-
-// 帮助信息
-const usage = `Usage: jp [options] [jsonpath]
-
-Options:
-  -p, --path       JSONPath expression (optional, output full JSON if not specified)
-  -f, --file       JSON file path (if not specified, read from stdin)
-  -c, --compact    Output compact JSON instead of pretty-printed
-  -n, --no-color   Disable colored output
-  -i, --indent     Indentation string for pretty-printing (default: "  ")
-  -h, --help       Show this help message
-  -v, --version    Show version information
-
-Examples:
-  jp -f data.json                               # Output entire JSON from file
-  jp -f data.json -p '$.store.book[0].title'    # Get the title of the first book
-  jp -f data.json '$.store.book[*].author'      # Get all book authors
-  jp -p '$.store.book[?(@.price < 10)].title'   # Get titles of books cheaper than 10
-  jp '$.store..price'                           # Get all prices in the store
-  cat data.json | jp                            # Output entire JSON from stdin
-  cat data.json | jp '$.store.book[0]'          # Get first book from stdin
-
-For more information and examples, visit:
-https://github.com/davidhoo/jsonpath`
-
-// 主函数
 func main() {
+	cfg := &config{
+		indent: "  ",
+	}
+
+	// 自定义 usage
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "%s\n\n", descColor("A JSONPath processor that fully complies with RFC 9535"))
+		fmt.Fprintf(os.Stderr, "%s\n", descColor("Usage:"))
+		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+			cmdColor("jp"),
+			flagColor("[-p <jsonpath>]"),
+			flagColor("[-f <file>]"),
+		)
+		fmt.Fprintf(os.Stderr, "%s\n", descColor("Options:"))
+		fmt.Fprintf(os.Stderr, "  %s  %s %s\n",
+			flagColor("-p"),
+			descColor("JSONPath expression"),
+			descColor("(if not specified, output entire JSON)"),
+		)
+		fmt.Fprintf(os.Stderr, "  %s  %s %s\n",
+			flagColor("-f"),
+			descColor("JSON file path"),
+			descColor("(reads from stdin if not specified)"),
+		)
+		fmt.Fprintf(os.Stderr, "  %s  %s\n",
+			flagColor("-c"),
+			descColor("Compact output (no formatting)"),
+		)
+		fmt.Fprintf(os.Stderr, "  %s  %s\n",
+			flagColor("--no-color"),
+			descColor("Disable colored output"),
+		)
+		fmt.Fprintf(os.Stderr, "  %s  %s\n",
+			flagColor("-h"),
+			descColor("Show this help"),
+		)
+		fmt.Fprintf(os.Stderr, "  %s  %s\n\n",
+			flagColor("-v"),
+			descColor("Show version"),
+		)
+		fmt.Fprintf(os.Stderr, "%s\n", descColor("Examples:"))
+		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Output entire JSON with colors"))
+		fmt.Fprintf(os.Stderr, "  %s %s\n\n",
+			cmdColor("jp"),
+			flagColor("-f data.json"),
+		)
+		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Query specific path"))
+		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+			cmdColor("jp"),
+			flagColor("-f data.json"),
+			flagColor("-p '$.store.book[*].author'"),
+		)
+		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Filter by condition"))
+		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+			cmdColor("jp"),
+			flagColor("-f data.json"),
+			flagColor("-p '$.store.book[?(@.price > 10)]'"),
+		)
+		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Read from stdin"))
+		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+			exampleColor("echo '{\"name\":\"jp\"}' |"),
+			cmdColor("jp"),
+			flagColor("-p '$.name'"),
+		)
+		fmt.Fprintf(os.Stderr, "%s %s\n",
+			descColor("Version:"),
+			versionColor("v1.0.1"),
+		)
+	}
+
 	// 解析命令行参数
-	cfg := parseFlags()
+	flag.StringVar(&cfg.path, "p", "", "JSONPath expression")
+	flag.StringVar(&cfg.file, "f", "", "JSON file path")
+	flag.BoolVar(&cfg.compact, "c", false, "Compact output")
+	flag.BoolVar(&cfg.noColor, "no-color", false, "Disable colored output")
+	version := flag.Bool("v", false, "Show version")
+	flag.Parse()
+
+	// 显示版本信息
+	if *version {
+		fmt.Printf("%s %s\n",
+			descColor("jp version"),
+			versionColor("v1.0.1"),
+		)
+		os.Exit(0)
+	}
 
 	// 处理特殊命令
-	if handleSpecialCommands(cfg) {
-		return
-	}
+	handleSpecialCommands(cfg)
 
 	// 读取输入
-	input, err := readInput(cfg.file)
+	data, err := readInput(cfg.file)
 	if err != nil {
-		exitWithError("Error reading input: %v", err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
-	// 执行 JSONPath 查询
-	result, err := executeQuery(cfg.path, input)
-	if err != nil {
-		exitWithError("Error executing query: %v", err)
+	// 如果指定了 JSONPath 表达式，执行查询
+	if cfg.path != "" {
+		// 编译 JSONPath 表达式
+		jp, err := jsonpath.Compile(cfg.path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error compiling JSONPath"), err)
+			os.Exit(1)
+		}
+
+		// 执行查询
+		result, err := jp.Execute(data)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error executing query"), err)
+			os.Exit(1)
+		}
+
+		data = result
 	}
 
 	// 输出结果
-	if err := outputResult(result, cfg); err != nil {
-		exitWithError("Error outputting result: %v", err)
+	if err := outputResult(data, cfg); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
-// 解析命令行参数
-func parseFlags() *config {
-	cfg := &config{}
-
-	flag.StringVar(&cfg.expr, "p", "", "JSONPath expression")
-	flag.StringVar(&cfg.expr, "path", "", "JSONPath expression")
-	flag.StringVar(&cfg.file, "f", "", "JSON file path")
-	flag.StringVar(&cfg.file, "file", "", "JSON file path")
-	flag.BoolVar(&cfg.compact, "c", false, "Output compact JSON")
-	flag.BoolVar(&cfg.compact, "compact", false, "Output compact JSON")
-	flag.BoolVar(&cfg.noColor, "n", false, "Disable colored output")
-	flag.BoolVar(&cfg.noColor, "no-color", false, "Disable colored output")
-	flag.StringVar(&cfg.indent, "i", "  ", "Indentation string")
-	flag.StringVar(&cfg.indent, "indent", "  ", "Indentation string")
-	flag.BoolVar(&cfg.help, "h", false, "Show help message")
-	flag.BoolVar(&cfg.help, "help", false, "Show help message")
-	flag.BoolVar(&cfg.version, "v", false, "Show version")
-	flag.BoolVar(&cfg.version, "version", false, "Show version")
-
-	flag.Usage = func() {
-		fmt.Println(usage)
+// 处理特殊命令
+func handleSpecialCommands(cfg *config) {
+	// 如果没有参数，显示帮助
+	if len(os.Args) == 1 {
+		flag.Usage()
+		os.Exit(0)
 	}
-
-	flag.Parse()
-
-	// 获取 JSONPath 表达式
-	if cfg.expr != "" {
-		cfg.path = cfg.expr
-	} else if flag.NArg() > 0 {
-		cfg.path = flag.Arg(0)
-	}
-
-	return cfg
-}
-
-// 处理特殊命令（帮助和版本信息）
-func handleSpecialCommands(cfg *config) bool {
-	if cfg.help {
-		fmt.Println(usage)
-		return true
-	}
-
-	if cfg.version {
-		fmt.Printf("jp version %s\n", version)
-		return true
-	}
-
-	return false
 }
 
 // 读取输入
@@ -162,7 +189,7 @@ func readInput(filePath string) (interface{}, error) {
 		// 从文件读取
 		file, err := os.Open(filePath)
 		if err != nil {
-			return nil, fmt.Errorf("opening file: %w", err)
+			return nil, fmt.Errorf("%s: %w", errorColor("error opening file"), err)
 		}
 		defer file.Close()
 		reader = file
@@ -176,31 +203,10 @@ func readInput(filePath string) (interface{}, error) {
 	decoder := json.NewDecoder(reader)
 	decoder.UseNumber()
 	if err := decoder.Decode(&data); err != nil {
-		return nil, fmt.Errorf("parsing JSON: %w", err)
+		return nil, fmt.Errorf("%s: %w", errorColor("error parsing JSON"), err)
 	}
 
 	return data, nil
-}
-
-// 执行 JSONPath 查询
-func executeQuery(path string, data interface{}) (interface{}, error) {
-	// 如果没有指定 JSONPath 表达式，返回完整数据
-	if path == "" {
-		return data, nil
-	}
-
-	// 编译并执行 JSONPath 表达式
-	jp, err := jsonpath.Compile(path)
-	if err != nil {
-		return nil, fmt.Errorf("compiling JSONPath: %w", err)
-	}
-
-	result, err := jp.Execute(data)
-	if err != nil {
-		return nil, fmt.Errorf("executing JSONPath: %w", err)
-	}
-
-	return result, nil
 }
 
 // 输出结果
@@ -211,7 +217,7 @@ func outputResult(result interface{}, cfg *config) error {
 	enc.SetEscapeHTML(false)
 
 	if err := enc.Encode(result); err != nil {
-		return fmt.Errorf("encoding JSON: %w", err)
+		return fmt.Errorf("%s: %w", errorColor("error encoding JSON"), err)
 	}
 
 	output := strings.TrimSuffix(buf.String(), "\n")
@@ -345,10 +351,4 @@ func colorizeJSON(jsonStr string) string {
 	}
 
 	return result.String()
-}
-
-// 输出错误并退出
-func exitWithError(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, errorColor(format+"\n", args...))
-	os.Exit(1)
 }
