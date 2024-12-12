@@ -1,0 +1,6 @@
+feat: restore file input support
+
+- Add -f/--file option to read JSON from file
+- Update help message and examples
+- Improve error messages for file reading
+- Keep stdin as default input when no file specified

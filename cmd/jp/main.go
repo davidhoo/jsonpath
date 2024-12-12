@@ -21,6 +21,7 @@ var (
 // 命令行参数
 type config struct {
 	path    string
+	file    string
 	compact bool
 	noColor bool
 	indent  string
@@ -35,21 +36,22 @@ const version = "1.0.1"
 const usage = `Usage: jp [options] <jsonpath>
 
 Options:
-  -c, --compact     Output compact JSON instead of pretty-printed
-  -n, --no-color    Disable colored output
-  -i, --indent      Indentation string for pretty-printing (default: "  ")
-  -h, --help        Show this help message
-  -v, --version     Show version information
+  -f, --file       JSON file path (if not specified, read from stdin)
+  -c, --compact    Output compact JSON instead of pretty-printed
+  -n, --no-color   Disable colored output
+  -i, --indent     Indentation string for pretty-printing (default: "  ")
+  -h, --help       Show this help message
+  -v, --version    Show version information
 
 Examples:
-  jp '$.store.book[0].title'              # Get the title of the first book
-  jp '$.store.book[*].author'             # Get all book authors
-  jp '$.store.book[?(@.price < 10)].title' # Get titles of books cheaper than 10
-  jp '$.store..price'                     # Get all prices in the store
-  cat data.json | jp '$.store.book[0]'    # Read JSON from file
+  jp -f data.json '$.store.book[0].title'     # Get the title of the first book from file
+  jp -f data.json '$.store.book[*].author'    # Get all book authors from file
+  jp '$.store.book[?(@.price < 10)].title'    # Get titles of books cheaper than 10
+  jp '$.store..price'                         # Get all prices in the store
+  cat data.json | jp '$.store.book[0]'        # Read JSON from stdin
 
 For more information and examples, visit:
-https://github.com/your-username/jsonpath`
+https://github.com/davidhoo/jsonpath`
 
 // 主函数
 func main() {
@@ -62,7 +64,7 @@ func main() {
 	}
 
 	// 读取输入
-	input, err := readInput()
+	input, err := readInput(cfg.file)
 	if err != nil {
 		exitWithError("Error reading input: %v", err)
 	}
@@ -83,6 +85,8 @@ func main() {
 func parseFlags() *config {
 	cfg := &config{}
 
+	flag.StringVar(&cfg.file, "f", "", "JSON file path")
+	flag.StringVar(&cfg.file, "file", "", "JSON file path")
 	flag.BoolVar(&cfg.compact, "c", false, "Output compact JSON")
 	flag.BoolVar(&cfg.compact, "compact", false, "Output compact JSON")
 	flag.BoolVar(&cfg.noColor, "n", false, "Disable colored output")
@@ -130,10 +134,22 @@ func handleSpecialCommands(cfg *config) bool {
 }
 
 // 读取输入
-func readInput() (interface{}, error) {
-	bytes, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		return nil, fmt.Errorf("reading stdin: %w", err)
+func readInput(filePath string) (interface{}, error) {
+	var bytes []byte
+	var err error
+
+	if filePath != "" {
+		// 从文件读取
+		bytes, err = os.ReadFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("reading file: %w", err)
+		}
+	} else {
+		// 从标准输入读取
+		bytes, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("reading stdin: %w", err)
+		}
 	}
 
 	var data interface{}
