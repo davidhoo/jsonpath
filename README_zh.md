@@ -26,7 +26,7 @@
   - 友好的错误提示
 - 作为 Go 库使用
   - 简洁的 API 设计
-  - 完整的类型安全
+  - 完整���类型安全
   - 丰富的示例代码
   - 详细的文档说明
 
@@ -57,11 +57,11 @@ go install github.com/davidhoo/jsonpath/cmd/jp@latest
 ### 基本用法
 
 ```bash
-jp -p <jsonpath_expression> [-f <json_file>] [-c]
+jp [-p <jsonpath_expression>] [-f <json_file>] [-c]
 ```
 
 参数说明：
-- `-p` JSONPath 表达式（必需）
+- `-p` JSONPath 表达式（如果不指定，则输出完整的 JSON）
 - `-f` JSON 文件路径（如果不指定，则从标准输入读取）
 - `-c` 压缩输出（不格式化）
 - `-h` 显示帮助信息
@@ -70,14 +70,17 @@ jp -p <jsonpath_expression> [-f <json_file>] [-c]
 ### 示例
 
 ```bash
-# 从文件读取
+# 输出完整的 JSON
+jp -f data.json
+
+# 查询特定路径
 jp -f data.json -p '$.store.book[*].author'
 
 # 从标准输入读取
 echo '{"name": "John"}' | jp -p '$.name'
 
 # 压缩输出
-jp -f data.json -p '$.store.book[0]' -c
+jp -f data.json -c
 ```
 
 ## 在 Go 程序中使用
@@ -188,7 +191,7 @@ func main() {
 
 ### 结果处理
 
-根��查询结果的类型，需要进行相应的类型断言：
+根查询结果的类型，需要进行相应的类型断言：
 
 ```go
 // 单个值结果
