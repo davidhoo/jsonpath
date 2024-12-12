@@ -22,19 +22,19 @@ var (
 	optionStyle  = color.New(color.FgHiMagenta)
 
 	// JSON 元素颜色
-	braceStyle   = color.New(color.FgHiYellow)  // {} 大括号，使用亮黄色
-	bracketStyle = color.New(color.FgYellow)    // [] 方括号，使用普通黄色
-	keyStyle     = color.New(color.FgHiCyan)    // 键名
-	stringStyle  = color.New(color.FgGreen)     // 字符串值
-	numberStyle  = color.New(color.FgHiBlue)    // 数字值
-	boolStyle    = color.New(color.FgHiMagenta) // 布尔值
-	nullStyle    = color.New(color.FgRed)       // null 值
-	commaStyle   = color.New(color.FgBlue)      // 逗号
-	colonStyle   = color.New(color.FgHiBlue)    // 冒号
+	braceStyle   = color.New(color.FgMagenta)  // {} 大括号，使用紫色
+	bracketStyle = color.New(color.FgYellow)   // [] 方括号，使用黄色
+	keyStyle     = color.New(color.FgHiCyan)   // 键名，使用亮青色
+	stringStyle  = color.New(color.FgHiGreen)  // 字符串值，使用亮绿色
+	numberStyle  = color.New(color.FgHiBlue)   // 数字值，使用亮蓝色
+	boolStyle    = color.New(color.FgHiYellow) // 布尔值，使用亮黄色
+	nullStyle    = color.New(color.FgHiRed)    // null 值，使用亮红色
+	commaStyle   = color.New(color.FgRed)      // 逗号，使用红色
+	colonStyle   = color.New(color.FgBlue)     // 冒号，使用蓝色
 
 	// 字符串引号颜色
-	keyQuoteStyle   = color.New(color.FgHiCyan) // 键名的引号，与键名颜色相同
-	valueQuoteStyle = color.New(color.FgGreen)  // 值的引号，与字符串值颜色相同
+	keyQuoteStyle   = color.New(color.FgMagenta) // 键名的引号，使用紫色
+	valueQuoteStyle = color.New(color.FgYellow)  // 值的引号，使用黄色
 )
 
 const version = "1.0.0"
