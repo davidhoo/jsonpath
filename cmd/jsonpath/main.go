@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"unicode"
 
 	"github.com/davidhoo/jsonpath"
 	"github.com/fatih/color"
@@ -18,6 +20,20 @@ var (
 	successStyle = color.New(color.FgHiGreen)
 	exampleStyle = color.New(color.FgYellow)
 	optionStyle  = color.New(color.FgHiMagenta)
+
+	// JSON 元素颜色
+	braceStyle     = color.New(color.FgYellow)    // {} 括号
+	bracketStyle   = color.New(color.FgYellow)    // [] 括号
+	keyStyle       = color.New(color.FgHiCyan)    // 键名
+	stringStyle    = color.New(color.FgGreen)     // 字符串值 (改为普通绿色，区别于键名的亮青色)
+	numberStyle    = color.New(color.FgHiBlue)    // 数字值
+	boolStyle      = color.New(color.FgHiMagenta) // 布尔值
+	nullStyle      = color.New(color.FgRed)       // null 值
+	separatorStyle = color.New(color.FgWhite)     // 分隔符 , :
+
+	// 字符串引号颜色
+	keyQuoteStyle   = color.New(color.FgHiCyan) // 键名的引号
+	valueQuoteStyle = color.New(color.FgGreen)  // 值的引号
 )
 
 const version = "1.0.0"
@@ -61,38 +77,132 @@ func printError(format string, a ...interface{}) {
 	errorStyle.Fprintf(os.Stderr, "Error: "+format+"\n", a...)
 }
 
-func formatJSON(data interface{}, compact bool) (string, error) {
+func colorizeJSON(data interface{}, compact bool) (string, error) {
 	var output []byte
 	var err error
 
 	if compact {
 		output, err = json.Marshal(data)
-	} else {
-		output, err = json.MarshalIndent(data, "", "  ")
+		if err != nil {
+			return "", err
+		}
+		return colorizeJSONString(string(output)), nil
 	}
 
+	output, err = json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return "", err
 	}
 
-	// 为不同类型的值添加不同的颜色
-	var colored string
-	switch v := data.(type) {
-	case []interface{}:
-		colored = successStyle.Sprintf("%s", string(output))
-	case string:
-		colored = color.HiGreenString("%q", v)
-	case float64:
-		colored = color.HiCyanString("%g", v)
-	case bool:
-		colored = color.HiMagentaString("%v", v)
-	case nil:
-		colored = color.HiRedString("null")
-	default:
-		colored = string(output)
-	}
+	return colorizeJSONString(string(output)), nil
+}
 
-	return colored, nil
+func colorizeJSONString(jsonStr string) string {
+	var result strings.Builder
+	inString := false
+	inKey := false
+	var prev rune
+	runes := []rune(jsonStr)
+
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		switch c {
+		case '"':
+			if prev != '\\' {
+				if !inString {
+					// 开始一个字符串
+					inString = true
+					// 检查是否是键名
+					inKey = len(strings.TrimSpace(result.String())) > 0 && strings.HasSuffix(strings.TrimSpace(result.String()), ":")
+					if inKey {
+						result.WriteString(keyQuoteStyle.Sprint("\""))
+					} else {
+						result.WriteString(valueQuoteStyle.Sprint("\""))
+					}
+				} else {
+					// 结束一个字符串
+					inString = false
+					if inKey {
+						result.WriteString(keyQuoteStyle.Sprint("\""))
+					} else {
+						result.WriteString(valueQuoteStyle.Sprint("\""))
+					}
+					inKey = false
+				}
+			} else {
+				result.WriteRune(c)
+			}
+		case '{', '}':
+			if !inString {
+				result.WriteString(braceStyle.Sprint(string(c)))
+			} else {
+				result.WriteRune(c)
+			}
+		case '[', ']':
+			if !inString {
+				result.WriteString(bracketStyle.Sprint(string(c)))
+			} else {
+				result.WriteRune(c)
+			}
+		case ',':
+			if !inString {
+				result.WriteString(separatorStyle.Sprint(string(c)))
+			} else {
+				result.WriteRune(c)
+			}
+		case ':':
+			if !inString {
+				result.WriteString(separatorStyle.Sprint(string(c)))
+			} else {
+				result.WriteRune(c)
+			}
+		default:
+			if !inString {
+				// 处理布尔值和 null
+				rest := string(runes[i:])
+				switch {
+				case strings.HasPrefix(rest, "true"):
+					result.WriteString(boolStyle.Sprint("true"))
+					i += 3 // 跳过剩余字符
+				case strings.HasPrefix(rest, "false"):
+					result.WriteString(boolStyle.Sprint("false"))
+					i += 4 // 跳过剩余字符
+				case strings.HasPrefix(rest, "null"):
+					result.WriteString(nullStyle.Sprint("null"))
+					i += 3 // 跳过剩余字符
+				case unicode.IsDigit(c) || c == '-' || c == '.':
+					// 处理数字
+					numStr := string(c)
+					j := i + 1
+					for j < len(runes) {
+						next := runes[j]
+						if unicode.IsDigit(next) || next == '.' || next == 'e' || next == 'E' || next == '-' || next == '+' {
+							numStr += string(next)
+							j++
+						} else {
+							break
+						}
+					}
+					if _, err := fmt.Sscanf(numStr, "%f"); err == nil {
+						result.WriteString(numberStyle.Sprint(numStr))
+						i = j - 1 // 更新索引
+					} else {
+						result.WriteRune(c)
+					}
+				default:
+					result.WriteRune(c)
+				}
+			} else {
+				if inKey {
+					result.WriteString(keyStyle.Sprint(string(c)))
+				} else {
+					result.WriteString(stringStyle.Sprint(string(c)))
+				}
+			}
+		}
+		prev = c
+	}
+	return result.String()
 }
 
 func main() {
@@ -150,7 +260,7 @@ func main() {
 
 	// 如果没有提供 JSONPath 表达式，输出完整的 JSON
 	if *path == "" {
-		output, err := formatJSON(data, *compact)
+		output, err := colorizeJSON(data, *compact)
 		if err != nil {
 			printError("formatting output: %v", err)
 			os.Exit(1)
@@ -173,7 +283,7 @@ func main() {
 	}
 
 	// 格式化并输出结果
-	output, err := formatJSON(result, *compact)
+	output, err := colorizeJSON(result, *compact)
 	if err != nil {
 		printError("formatting output: %v", err)
 		os.Exit(1)
