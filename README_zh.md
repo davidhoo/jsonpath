@@ -70,13 +70,14 @@ go install github.com/davidhoo/jsonpath/cmd/jp@latest
 
 ## 命令行使用
 
-### 基本用法
+### 命令行基本用法
 
 ```bash
 jp [-p <jsonpath_expression>] [-f <json_file>] [-c]
 ```
 
 参数说明：
+
 - `-p` JSONPath 表达式（如果不指定，则输出完整的 JSON）
 - `-f` JSON 文件路径（如果不指定，则从标准输入读取）
 - `-c` 压缩输出（不格式化）
@@ -105,7 +106,7 @@ jp -f data.json -c
 
 ## 在 Go 程序中使用
 
-### 基本用法
+### 库基本用法
 
 ```go
 import "github.com/davidhoo/jsonpath"
@@ -235,7 +236,7 @@ if obj, ok := result.(map[string]interface{}); ok {
 ## 实现说明
 
 1. 完全遵循 RFC 9535 规范
-   - 支持��有标准操作符
+   - 支持所有标准操作符
    - 符合标准的语法解析
    - 标准的结果格式
 

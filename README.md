@@ -70,13 +70,14 @@ Download the appropriate binary for your platform from the [releases page](https
 
 ## Command Line Usage
 
-### Basic Usage
+### CLI Basic Usage
 
 ```bash
 jp [-p <jsonpath_expression>] [-f <json_file>] [-c]
 ```
 
 Options:
+
 - `-p` JSONPath expression (if not specified, output entire JSON)
 - `-f` JSON file path (reads from stdin if not specified)
 - `-c` Compact output (no formatting)
@@ -105,7 +106,7 @@ jp -f data.json -c
 
 ## Go Library Usage
 
-### Basic Usage
+### Library Basic Usage
 
 ```go
 import "github.com/davidhoo/jsonpath"
