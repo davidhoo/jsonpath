@@ -1,47 +1,54 @@
 package jsonpath
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
 )
 
-// JSONPath 表示一个编译好的 JSONPath 表达式
-type JSONPath struct {
-	segments []segment
-}
-
-// Compile 编译 JSONPath 表达式
-func Compile(path string) (*JSONPath, error) {
-	if !strings.HasPrefix(path, "$") {
-		return nil, fmt.Errorf("path must start with $")
+// Query executes a JSONPath query on a JSON string and returns the result
+func Query(jsonStr string, path string) (interface{}, error) {
+	// Parse JSON
+	var data interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %v", err)
 	}
 
-	segments, err := parse(path[1:])
+	// Parse path
+	segments, err := parse(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid path: %v", err)
 	}
 
-	return &JSONPath{segments: segments}, nil
-}
+	// Evaluate segments
+	result := []interface{}{data}
+	for _, seg := range segments {
+		var newResult []interface{}
+		for _, val := range result {
+			evaluated, err := seg.evaluate(val)
+			if err != nil {
+				return nil, err
+			}
+			newResult = append(newResult, evaluated...)
+		}
+		result = newResult
+	}
 
-// Execute 执行 JSONPath 查询
-func (jp *JSONPath) Execute(data interface{}) (interface{}, error) {
-	evaluator := newEvaluator(jp.segments)
-	return evaluator.evaluate(data)
-}
-
-// String 返回 JSONPath 表达式的字符串表示
-func (jp *JSONPath) String() string {
-	var builder strings.Builder
-	builder.WriteString("$")
-	for _, seg := range jp.segments {
-		str := seg.String()
-		if strings.HasPrefix(str, "[") || strings.HasPrefix(str, "..") {
-			builder.WriteString(str)
-		} else {
-			builder.WriteString(".")
-			builder.WriteString(str)
+	// 根据最后一个段的类型决定返回格式
+	if len(segments) > 0 {
+		switch segments[len(segments)-1].(type) {
+		case *filterSegment:
+			return result, nil
+		case *functionSegment:
+			if len(result) == 1 {
+				return result[0], nil
+			}
+			return result, nil
 		}
 	}
-	return builder.String()
+
+	// 对于其他情况，如果只有一个结果，返回单个值
+	if len(result) == 1 {
+		return result[0], nil
+	}
+	return result, nil
 }

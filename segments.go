@@ -1,7 +1,6 @@
 package jsonpath
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -19,14 +18,25 @@ type nameSegment struct {
 }
 
 func (s *nameSegment) evaluate(value interface{}) ([]interface{}, error) {
-	// 处理对象
-	if obj, ok := value.(map[string]interface{}); ok {
-		if val, exists := obj[s.name]; exists {
-			return []interface{}{val}, nil
-		}
-		return []interface{}{}, nil
+	// 处理函数调用
+	if strings.HasSuffix(s.name, "()") {
+		funcName := s.name[:len(s.name)-2]
+		fn := &functionSegment{name: funcName}
+		return fn.evaluate(value)
 	}
-	return nil, fmt.Errorf("value is not an object")
+
+	// 处理对象字段访问
+	obj, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("value is not an object")
+	}
+
+	val, exists := obj[s.name]
+	if !exists {
+		return nil, fmt.Errorf("field %s not found", s.name)
+	}
+
+	return []interface{}{val}, nil
 }
 
 func (s *nameSegment) String() string {
@@ -249,19 +259,19 @@ type filterSegment struct {
 }
 
 func (s *filterSegment) evaluate(value interface{}) ([]interface{}, error) {
+	// 确保输入是数组
 	arr, ok := value.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("filter can only be applied to array")
+		return nil, fmt.Errorf("filter can only be applied to arrays")
 	}
 
 	var result []interface{}
 	for _, item := range arr {
-		match, err := s.matchCondition(item)
+		matches, err := s.evaluateFilter(item)
 		if err != nil {
-			fmt.Printf("Filter error for item %v: %v\n", item, err)
-			continue // 跳过错误的项
+			continue
 		}
-		if match {
+		if matches {
 			result = append(result, item)
 		}
 	}
@@ -269,81 +279,32 @@ func (s *filterSegment) evaluate(value interface{}) ([]interface{}, error) {
 	return result, nil
 }
 
-func (s *filterSegment) matchCondition(item interface{}) (bool, error) {
-	// 如果字段为空，直接比较值本身
-	if s.field == "" {
-		// 转换值为数字
-		var numValue float64
-		switch v := item.(type) {
-		case float64:
-			numValue = v
-		case int:
-			numValue = float64(v)
-		case json.Number:
-			var err error
-			numValue, err = v.Float64()
-			if err != nil {
-				return false, fmt.Errorf("invalid number: %v", v)
-			}
-		default:
-			return false, fmt.Errorf("value is not a number: %v", item)
-		}
-
-		// 比较值
-		switch s.operator {
-		case "<":
-			return numValue < s.value, nil
-		case "<=":
-			return numValue <= s.value, nil
-		case ">":
-			return numValue > s.value, nil
-		case ">=":
-			return numValue >= s.value, nil
-		case "==":
-			return numValue == s.value, nil
-		case "!=":
-			return numValue != s.value, nil
-		default:
-			return false, fmt.Errorf("unsupported operator: %s", s.operator)
-		}
-	}
-
-	// 检查项是否为对象
-	obj, ok := item.(map[string]interface{})
-	if !ok {
-		return false, fmt.Errorf("filter item must be object, got %T", item)
-	}
-
+func (s *filterSegment) evaluateFilter(item interface{}) (bool, error) {
 	// 获取字段值
-	fieldValue, ok := obj[s.field]
-	if !ok {
-		// 尝试移除字段名前的点
-		field := strings.TrimPrefix(s.field, ".")
-		fieldValue, ok = obj[field]
-		if !ok {
-			return false, fmt.Errorf("field %s not found in %v", s.field, obj)
-		}
-	}
+	var fieldValue interface{}
+	var err error
 
-	// 转换字段值为数字
-	var numValue float64
-	switch v := fieldValue.(type) {
-	case float64:
-		numValue = v
-	case int:
-		numValue = float64(v)
-	case json.Number:
-		var err error
-		numValue, err = v.Float64()
+	if s.field == "" {
+		fieldValue = item
+	} else {
+		fieldValue, err = getFieldValue(item, s.field)
 		if err != nil {
-			return false, fmt.Errorf("invalid number: %v", v)
+			return false, err
 		}
-	default:
-		return false, fmt.Errorf("field %s is not a number (type: %T, value: %v)", s.field, fieldValue, fieldValue)
 	}
 
-	// 比较值
+	// 转换为数字进行比较
+	numValue, ok := fieldValue.(float64)
+	if !ok {
+		return false, fmt.Errorf("field value is not a number")
+	}
+
+	// 执行比较
 	switch s.operator {
+	case "==":
+		return numValue == s.value, nil
+	case "!=":
+		return numValue != s.value, nil
 	case "<":
 		return numValue < s.value, nil
 	case "<=":
@@ -352,20 +313,42 @@ func (s *filterSegment) matchCondition(item interface{}) (bool, error) {
 		return numValue > s.value, nil
 	case ">=":
 		return numValue >= s.value, nil
-	case "==":
-		return numValue == s.value, nil
-	case "!=":
-		return numValue != s.value, nil
 	default:
 		return false, fmt.Errorf("unsupported operator: %s", s.operator)
 	}
 }
 
-func (s *filterSegment) String() string {
-	if s.field == "" {
-		return fmt.Sprintf("[?(@%s%v)]", s.operator, s.value)
+// getFieldValue 获取对象中指定字段的值
+func getFieldValue(obj interface{}, field string) (interface{}, error) {
+	// 移除开头的点
+	if strings.HasPrefix(field, ".") {
+		field = field[1:]
 	}
-	return fmt.Sprintf("[?(@.%s%s%v)]", s.field, s.operator, s.value)
+
+	// 分割字段路径
+	parts := strings.Split(field, ".")
+	current := obj
+
+	for _, part := range parts {
+		// 确保当前值是对象
+		m, ok := current.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("value is not an object")
+		}
+
+		// 获取下一级字���值
+		var exists bool
+		current, exists = m[part]
+		if !exists {
+			return nil, fmt.Errorf("field %s not found", part)
+		}
+	}
+
+	return current, nil
+}
+
+func (s *filterSegment) String() string {
+	return fmt.Sprintf("[?(@%s%s%v)]", s.field, s.operator, s.value)
 }
 
 // 多索引段
@@ -403,4 +386,44 @@ func (s *multiIndexSegment) String() string {
 		indices[i] = strconv.Itoa(idx)
 	}
 	return fmt.Sprintf("[%s]", strings.Join(indices, ","))
+}
+
+// functionSegment represents a function call in the JSONPath expression
+type functionSegment struct {
+	name string
+	args []interface{}
+}
+
+func (s *functionSegment) evaluate(value interface{}) ([]interface{}, error) {
+	// 获取函数
+	fn, err := GetFunction(s.name)
+	if err != nil {
+		return nil, err
+	}
+
+	// 如果没有参数，使用当前值为参数
+	if len(s.args) == 0 {
+		s.args = []interface{}{value}
+	}
+
+	// 调用函数
+	result, err := fn.Call(s.args)
+	if err != nil {
+		return nil, err
+	}
+
+	return []interface{}{result}, nil
+}
+
+func (s *functionSegment) String() string {
+	args := make([]string, len(s.args))
+	for i, arg := range s.args {
+		switch v := arg.(type) {
+		case string:
+			args[i] = fmt.Sprintf("'%s'", v)
+		default:
+			args[i] = fmt.Sprintf("%v", v)
+		}
+	}
+	return fmt.Sprintf("%s(%s)", s.name, strings.Join(args, ","))
 }

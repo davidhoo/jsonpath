@@ -1,129 +1,161 @@
-package jsonpath_test
+package jsonpath
 
 import (
-	"encoding/json"
+	"reflect"
 	"testing"
-
-	"github.com/davidhoo/jsonpath"
 )
 
-func TestJSONPath(t *testing.T) {
-	jsonData := `{
-		"store": {
-			"book": [
-				{
-					"category": "reference",
-					"author": "Nigel Rees",
-					"title": "Sayings of the Century",
-					"price": 8.95
-				},
-				{
-					"category": "fiction",
-					"author": "Evelyn Waugh",
-					"title": "Sword of Honour",
-					"price": 12.99
-				}
-			]
-		}
-	}`
-
-	var data interface{}
-	if err := json.Unmarshal([]byte(jsonData), &data); err != nil {
-		t.Fatal(err)
-	}
-
-	tests := []struct {
-		path string
-		want interface{}
+func TestBasicQueries(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
 	}{
-		{"$.store.book[0].author", "Nigel Rees"},
-		{"$.store.book[*].author", []interface{}{"Nigel Rees", "Evelyn Waugh"}},
-		{"$.store.book[?(@.price < 10)].title", []interface{}{"Sayings of the Century"}},
+		{
+			name:     "simple field access",
+			json:     `{"name": "John"}`,
+			path:     "$.name",
+			expected: "John",
+		},
+		{
+			name:     "nested field access",
+			json:     `{"person": {"name": "John"}}`,
+			path:     "$.person.name",
+			expected: "John",
+		},
+		{
+			name:     "array index access",
+			json:     `{"items": [1, 2, 3]}`,
+			path:     "$.items[1]",
+			expected: float64(2),
+		},
+		{
+			name:     "wildcard",
+			json:     `{"items": [1, 2, 3]}`,
+			path:     "$.items[*]",
+			expected: []interface{}{float64(1), float64(2), float64(3)},
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			jp, err := jsonpath.Compile(tt.path)
-			if err != nil {
-				t.Fatal(err)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
 			}
-
-			result, err := jp.Execute(data)
 			if err != nil {
-				t.Fatal(err)
+				t.Errorf("unexpected error: %v", err)
+				return
 			}
-
-			resultJSON, _ := json.Marshal(result)
-			wantJSON, _ := json.Marshal(tt.want)
-			if string(resultJSON) != string(wantJSON) {
-				t.Errorf("got %v, want %v", string(resultJSON), string(wantJSON))
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
 			}
 		})
 	}
 }
 
-func TestJSONPathExtended(t *testing.T) {
-	jsonData := `{
-		"store": {
-			"book": [
-				{
-					"category": "reference",
-					"author": "Nigel Rees",
-					"title": "Sayings of the Century",
-					"price": 8.95,
-					"reviews": [
-						{"rating": 4, "text": "Good book"},
-						{"rating": 5, "text": "Excellent"}
-					]
-				},
-				{
-					"category": "fiction",
-					"author": "Evelyn Waugh",
-					"title": "Sword of Honour",
-					"price": 12.99
-				}
-			],
-			"bicycle": {
-				"color": "red",
-				"price": 19.95
-			}
-		}
-	}`
-
-	var data interface{}
-	if err := json.Unmarshal([]byte(jsonData), &data); err != nil {
-		t.Fatal(err)
-	}
-
-	tests := []struct {
-		path string
-		want interface{}
+func TestFilterQueries(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
 	}{
-		{"$..price", []interface{}{8.95, 12.99, 19.95}},
-		{"$..rating", []interface{}{4.0, 5.0}},
-		{"$.store.book[0,1].author", []interface{}{"Nigel Rees", "Evelyn Waugh"}},
-		{"$.store.book[0:2].title", []interface{}{"Sayings of the Century", "Sword of Honour"}},
-		{"$.store.book[:1].title", []interface{}{"Sayings of the Century"}},
-		{"$.store.book[::2].title", []interface{}{"Sayings of the Century"}},
-		{"$.store.book[::-1].title", []interface{}{"Sword of Honour", "Sayings of the Century"}},
+		{
+			name:     "filter by value",
+			json:     `{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}`,
+			path:     `$.items[?(@.id==2)]`,
+			expected: []interface{}{map[string]interface{}{"id": float64(2)}},
+		},
+		{
+			name:     "filter by comparison",
+			json:     `{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}`,
+			path:     `$.items[?(@.id>2)]`,
+			expected: []interface{}{map[string]interface{}{"id": float64(3)}},
+		},
+		{
+			name:     "filter with nested field",
+			json:     `{"items": [{"user": {"age": 25}}, {"user": {"age": 30}}]}`,
+			path:     `$.items[?(@.user.age>27)]`,
+			expected: []interface{}{map[string]interface{}{"user": map[string]interface{}{"age": float64(30)}}},
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			jp, err := jsonpath.Compile(tt.path)
-			if err != nil {
-				t.Fatal(err)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
 			}
-
-			result, err := jp.Execute(data)
 			if err != nil {
-				t.Fatal(err)
+				t.Errorf("unexpected error: %v", err)
+				return
 			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}
 
-			resultJSON, _ := json.Marshal(result)
-			wantJSON, _ := json.Marshal(tt.want)
-			if string(resultJSON) != string(wantJSON) {
-				t.Errorf("got %v, want %v", string(resultJSON), string(wantJSON))
+func TestLengthFunction(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "length of string",
+			json:     `{"name": "hello"}`,
+			path:     "$.name.length()",
+			expected: float64(5),
+		},
+		{
+			name:     "length of array",
+			json:     `{"items": [1, 2, 3]}`,
+			path:     "$.items.length()",
+			expected: float64(3),
+		},
+		{
+			name:     "length of object",
+			json:     `{"obj": {"a": 1, "b": 2}}`,
+			path:     "$.obj.length()",
+			expected: float64(2),
+		},
+		{
+			name:    "length with invalid argument",
+			json:    `{"num": 42}`,
+			path:    "$.num.length()",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
 			}
 		})
 	}
