@@ -115,6 +115,12 @@ func printHelp() {
 		flagColor("-f data.json"),
 		flagColor("-p '$.store.book[*].price.min()'"),
 	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Count occurrences of a value"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.book[*].category.count(\"fiction\")'"),
+	)
 	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Read from stdin"))
 	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
 		exampleColor("echo '{\"name\":\"jp\"}' |"),
@@ -137,6 +143,23 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("min()"),
 		descColor("Returns the minimum value in a numeric array"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("count(value)"),
+		descColor("Returns the number of occurrences of a value in an array"),
+	)
+	fmt.Fprintf(os.Stderr, "\n%s\n", descColor("Function Examples:"))
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("count(number)"),
+		descColor("$.numbers.count(2)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("count(string)"),
+		descColor("$.tags.count(\"a\")"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("count(object)"),
+		descColor("$.items.count({\"id\": 1})"),
 	)
 	fmt.Fprintf(os.Stderr, "\n%s %s\n",
 		descColor("Version:"),
