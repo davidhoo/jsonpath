@@ -322,3 +322,69 @@ func TestMinFunction(t *testing.T) {
 		})
 	}
 }
+
+func TestCountFunction(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "count numbers",
+			json:     `{"nums": [1, 2, 2, 3, 2, 4]}`,
+			path:     "$.nums.count(2)",
+			expected: float64(3),
+		},
+		{
+			name:     "count strings",
+			json:     `{"tags": ["a", "b", "a", "c", "a"]}`,
+			path:     `$.tags.count("a")`,
+			expected: float64(3),
+		},
+		{
+			name:     "count objects",
+			json:     `{"items": [{"id": 1}, {"id": 2}, {"id": 1}]}`,
+			path:     `$.items.count({"id": 1})`,
+			expected: float64(2),
+		},
+		{
+			name:     "count with no matches",
+			json:     `{"nums": [1, 2, 3]}`,
+			path:     "$.nums.count(4)",
+			expected: float64(0),
+		},
+		{
+			name:    "count with non-array",
+			json:    `{"num": 42}`,
+			path:    "$.num.count(42)",
+			wantErr: true,
+		},
+		{
+			name:    "count with missing value",
+			json:    `{"nums": [1, 2, 3]}`,
+			path:    "$.nums.count()",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}

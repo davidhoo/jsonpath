@@ -1,6 +1,7 @@
 package jsonpath
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -17,12 +18,70 @@ type nameSegment struct {
 	name string
 }
 
+// 解析函数参数
+func parseFunctionArgs(argsStr string) ([]interface{}, error) {
+	if argsStr == "" {
+		return nil, nil
+	}
+
+	// 处理数字
+	if num, err := strconv.ParseFloat(argsStr, 64); err == nil {
+		return []interface{}{num}, nil
+	}
+
+	// 处理字符串（带引号）
+	if (strings.HasPrefix(argsStr, "'") && strings.HasSuffix(argsStr, "'")) ||
+		(strings.HasPrefix(argsStr, "\"") && strings.HasSuffix(argsStr, "\"")) {
+		return []interface{}{argsStr[1 : len(argsStr)-1]}, nil
+	}
+
+	// 处理对象（JSON格式）
+	if strings.HasPrefix(argsStr, "{") && strings.HasSuffix(argsStr, "}") {
+		var obj interface{}
+		if err := json.Unmarshal([]byte(argsStr), &obj); err == nil {
+			return []interface{}{obj}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("invalid argument format: %s", argsStr)
+}
+
 func (s *nameSegment) evaluate(value interface{}) ([]interface{}, error) {
 	// 处理函数调用
-	if strings.HasSuffix(s.name, "()") {
-		funcName := s.name[:len(s.name)-2]
-		fn := &functionSegment{name: funcName}
-		return fn.evaluate(value)
+	if strings.HasSuffix(s.name, ")") {
+		// 解析函数名和参数
+		openParen := strings.Index(s.name, "(")
+		if openParen == -1 {
+			return nil, fmt.Errorf("invalid function call syntax")
+		}
+		funcName := s.name[:openParen]
+		argsStr := s.name[openParen+1 : len(s.name)-1]
+
+		// 获取函数
+		fn, err := GetFunction(funcName)
+		if err != nil {
+			return nil, err
+		}
+
+		// 解析参数
+		var args []interface{}
+		if argsStr != "" {
+			parsedArgs, err := parseFunctionArgs(argsStr)
+			if err != nil {
+				return nil, err
+			}
+			args = append([]interface{}{value}, parsedArgs...)
+		} else {
+			args = []interface{}{value}
+		}
+
+		// 调用函数
+		result, err := fn.Call(args)
+		if err != nil {
+			return nil, err
+		}
+
+		return []interface{}{result}, nil
 	}
 
 	// 处理对象字段访问
@@ -336,7 +395,7 @@ func getFieldValue(obj interface{}, field string) (interface{}, error) {
 			return nil, fmt.Errorf("value is not an object")
 		}
 
-		// 获取下一级字���值
+		// 获取下一级字段值
 		var exists bool
 		current, exists = m[part]
 		if !exists {
