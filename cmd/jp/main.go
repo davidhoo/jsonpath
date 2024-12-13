@@ -113,6 +113,12 @@ func main() {
 			flagColor("-f data.json"),
 			flagColor("-p '$.store.book.length()'"),
 		)
+		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Get object keys"))
+		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+			cmdColor("jp"),
+			flagColor("-f data.json"),
+			flagColor("-p '$.store.keys()'"),
+		)
 		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Read from stdin"))
 		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
 			exampleColor("echo '{\"name\":\"jp\"}' |"),
@@ -123,6 +129,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  %s  %s\n",
 			flagColor("length()"),
 			descColor("Returns the length of a string, array, or object"),
+		)
+		fmt.Fprintf(os.Stderr, "  %s  %s\n",
+			flagColor("keys()"),
+			descColor("Returns an array of the object's property names in alphabetical order"),
 		)
 		fmt.Fprintf(os.Stderr, "\n%s %s\n",
 			descColor("Version:"),

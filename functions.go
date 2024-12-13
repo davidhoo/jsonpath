@@ -1,6 +1,9 @@
 package jsonpath
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // Function represents a JSONPath function
 type Function interface {
@@ -47,6 +50,35 @@ var globalFunctions = map[string]Function{
 			}
 
 			return nil, fmt.Errorf("length() argument must be string, array, or object")
+		},
+	},
+	"keys": &builtinFunction{
+		name: "keys",
+		callback: func(args []interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("keys() requires exactly 1 argument")
+			}
+
+			// 确保参数是对象
+			obj, ok := args[0].(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("keys() argument must be an object")
+			}
+
+			// 获取所有键并排序
+			keys := make([]string, 0, len(obj))
+			for k := range obj {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys) // 按字母顺序排序
+
+			// 转换为 interface{} 切片
+			result := make([]interface{}, len(keys))
+			for i, k := range keys {
+				result[i] = k
+			}
+
+			return result, nil
 		},
 	},
 }

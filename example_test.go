@@ -160,3 +160,51 @@ func TestLengthFunction(t *testing.T) {
 		})
 	}
 }
+
+func TestKeysFunction(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "keys of object",
+			json:     `{"c": 3, "a": 1, "b": 2}`,
+			path:     "$.keys()",
+			expected: []interface{}{"a", "b", "c"},
+		},
+		{
+			name:     "keys of nested object",
+			json:     `{"store": {"book": [], "bicycle": {}}}`,
+			path:     "$.store.keys()",
+			expected: []interface{}{"bicycle", "book"},
+		},
+		{
+			name:    "keys of non-object",
+			json:    `{"arr": [1, 2, 3]}`,
+			path:    "$.arr.keys()",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}
