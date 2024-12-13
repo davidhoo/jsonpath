@@ -148,20 +148,12 @@ func main() {
 
 	// 如果指定了 JSONPath 表达式，执行查询
 	if cfg.path != "" {
-		// 编译 JSONPath 表达式
-		jp, err := jsonpath.Compile(cfg.path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error compiling JSONPath"), err)
-			os.Exit(1)
-		}
-
-		// 执行查询
-		result, err := jp.Execute(data)
+		// 执行 JSONPath 查询
+		result, err := jsonpath.Query(string(data), cfg.path)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error executing query"), err)
 			os.Exit(1)
 		}
-
 		data = result
 	}
 
