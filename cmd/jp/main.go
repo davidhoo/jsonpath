@@ -137,7 +137,7 @@ func main() {
 	}
 
 	// 处理特殊命令
-	handleSpecialCommands(cfg)
+	handleSpecialCommands()
 
 	// 读取输入
 	data, err := readInput(cfg.file)
@@ -172,7 +172,7 @@ func main() {
 }
 
 // 处理特殊命令
-func handleSpecialCommands(cfg *config) {
+func handleSpecialCommands() {
 	// 如果没有参数，显示帮助
 	if len(os.Args) == 1 {
 		flag.Usage()
