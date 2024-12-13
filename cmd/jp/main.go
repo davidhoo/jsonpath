@@ -148,8 +148,15 @@ func main() {
 
 	// 如果指定了 JSONPath 表达式，执行查询
 	if cfg.path != "" {
+		// 将数据重新编码为 JSON 字符串
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error marshaling data"), err)
+			os.Exit(1)
+		}
+
 		// 执行 JSONPath 查询
-		result, err := jsonpath.Query(string(data), cfg.path)
+		result, err := jsonpath.Query(string(jsonData), cfg.path)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error executing query"), err)
 			os.Exit(1)
