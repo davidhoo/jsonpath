@@ -142,13 +142,25 @@ func printHelp() {
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("min()"),
-		descColor("Returns the minimum value in a numeric array"),
+		descColor("Returns the minimum value in a numeric array (ignores non-numeric values)"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("count(value)"),
 		descColor("Returns the number of occurrences of a value in an array"),
 	)
 	fmt.Fprintf(os.Stderr, "\n%s\n", descColor("Function Examples:"))
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("min()"),
+		descColor("$.numbers.min()                    # [3, 1, 4] -> 1"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("min()"),
+		descColor("$.mixed.min()                      # [3, \"a\", 1, null] -> 1"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("min()"),
+		descColor("$.store.book[*].price.min()        # Get minimum price"),
+	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("count(number)"),
 		descColor("$.numbers.count(2)"),
