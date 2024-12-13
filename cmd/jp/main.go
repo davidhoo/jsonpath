@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -17,7 +18,142 @@ import (
 )
 
 var (
-	// 颜色定义
+	errHelp    = errors.New("help requested")
+	errVersion = errors.New("version requested")
+)
+
+var (
+	help    bool
+	version bool
+	cfg     config
+)
+
+// config holds command line configuration
+type config struct {
+	path    string
+	file    string
+	compact bool
+	noColor bool
+	indent  string
+}
+
+// printHelp prints the help message
+func printHelp() {
+	fmt.Fprintf(os.Stderr, "%s\n\n", descColor("A JSONPath processor that fully complies with RFC 9535"))
+	fmt.Fprintf(os.Stderr, "%s\n", descColor("Usage:"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("[-p <jsonpath>]"),
+		flagColor("[-f <file>]"),
+	)
+	fmt.Fprintf(os.Stderr, "%s\n", descColor("Options:"))
+	fmt.Fprintf(os.Stderr, "  %s  %s %s\n",
+		flagColor("-p"),
+		descColor("JSONPath expression"),
+		descColor("(if not specified, output entire JSON)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s %s\n",
+		flagColor("-f"),
+		descColor("JSON file path"),
+		descColor("(reads from stdin if not specified)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("-c"),
+		descColor("Compact output (no formatting)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("--no-color"),
+		descColor("Disable colored output"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("-h"),
+		descColor("Show this help"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n\n",
+		flagColor("-v"),
+		descColor("Show version"),
+	)
+	fmt.Fprintf(os.Stderr, "%s\n", descColor("Examples:"))
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Output entire JSON with colors"))
+	fmt.Fprintf(os.Stderr, "  %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Query specific path"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.book[*].author'"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Filter by condition"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.book[?(@.price > 10)]'"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Use length function"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.book.length()'"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Get object keys"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.keys()'"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Get object values"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.values()'"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Get minimum price"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.book[*].price.min()'"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Read from stdin"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		exampleColor("echo '{\"name\":\"jp\"}' |"),
+		cmdColor("jp"),
+		flagColor("-p '$.name'"),
+	)
+	fmt.Fprintf(os.Stderr, "%s\n", descColor("Functions:"))
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("length()"),
+		descColor("Returns the length of a string, array, or object"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("keys()"),
+		descColor("Returns an array of the object's property names in alphabetical order"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("values()"),
+		descColor("Returns an array of the object's property values in key order"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("min()"),
+		descColor("Returns the minimum value in a numeric array"),
+	)
+	fmt.Fprintf(os.Stderr, "\n%s %s\n",
+		descColor("Version:"),
+		versionColor("v1.0.2"),
+	)
+}
+
+// printVersion prints the version information
+func printVersion() {
+	fmt.Printf("%s %s\n",
+		descColor("jp version"),
+		versionColor("v1.0.2"),
+	)
+}
+
+// 颜色定义
+var (
 	keyColor        = color.New(color.FgWhite).SprintFunc()
 	keyQuoteColor   = color.New(color.FgWhite).SprintFunc()
 	stringColor     = color.New(color.FgGreen).SprintFunc()
@@ -39,214 +175,61 @@ var (
 	errorColor   = color.New(color.FgRed, color.Bold).SprintFunc()
 )
 
-// 配置
-type config struct {
-	path    string
-	file    string
-	compact bool
-	noColor bool
-	indent  string
+// ParseFlags parses command line flags and returns path and file
+func ParseFlags() (string, string, error) {
+	flagSet := flag.NewFlagSet("jp", flag.ContinueOnError)
+	flagSet.StringVar(&cfg.path, "p", "", "JSONPath expression")
+	flagSet.StringVar(&cfg.file, "f", "", "JSON file path")
+	flagSet.BoolVar(&cfg.compact, "c", false, "Compact output")
+	flagSet.BoolVar(&cfg.noColor, "no-color", false, "Disable colored output")
+	flagSet.BoolVar(&help, "h", false, "Show help")
+	flagSet.BoolVar(&version, "v", false, "Show version")
+
+	if err := flagSet.Parse(os.Args[1:]); err != nil {
+		return "", "", err
+	}
+
+	if err := handleSpecialCommands(); err != nil {
+		return "", "", err
+	}
+
+	return cfg.path, cfg.file, nil
 }
 
-func main() {
-	cfg := &config{
-		indent: "  ",
+// handleSpecialCommands handles special commands like -h and -v
+func handleSpecialCommands() error {
+	if help {
+		printHelp()
+		return errHelp
 	}
-
-	// 自定义 usage
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "%s\n\n", descColor("A JSONPath processor that fully complies with RFC 9535"))
-		fmt.Fprintf(os.Stderr, "%s\n", descColor("Usage:"))
-		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
-			cmdColor("jp"),
-			flagColor("[-p <jsonpath>]"),
-			flagColor("[-f <file>]"),
-		)
-		fmt.Fprintf(os.Stderr, "%s\n", descColor("Options:"))
-		fmt.Fprintf(os.Stderr, "  %s  %s %s\n",
-			flagColor("-p"),
-			descColor("JSONPath expression"),
-			descColor("(if not specified, output entire JSON)"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s  %s %s\n",
-			flagColor("-f"),
-			descColor("JSON file path"),
-			descColor("(reads from stdin if not specified)"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s  %s\n",
-			flagColor("-c"),
-			descColor("Compact output (no formatting)"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s  %s\n",
-			flagColor("--no-color"),
-			descColor("Disable colored output"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s  %s\n",
-			flagColor("-h"),
-			descColor("Show this help"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s  %s\n\n",
-			flagColor("-v"),
-			descColor("Show version"),
-		)
-		fmt.Fprintf(os.Stderr, "%s\n", descColor("Examples:"))
-		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Output entire JSON with colors"))
-		fmt.Fprintf(os.Stderr, "  %s %s\n\n",
-			cmdColor("jp"),
-			flagColor("-f data.json"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Query specific path"))
-		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
-			cmdColor("jp"),
-			flagColor("-f data.json"),
-			flagColor("-p '$.store.book[*].author'"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Filter by condition"))
-		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
-			cmdColor("jp"),
-			flagColor("-f data.json"),
-			flagColor("-p '$.store.book[?(@.price > 10)]'"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Use length function"))
-		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
-			cmdColor("jp"),
-			flagColor("-f data.json"),
-			flagColor("-p '$.store.book.length()'"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Get object keys"))
-		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
-			cmdColor("jp"),
-			flagColor("-f data.json"),
-			flagColor("-p '$.store.keys()'"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Get object values"))
-		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
-			cmdColor("jp"),
-			flagColor("-f data.json"),
-			flagColor("-p '$.store.values()'"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Get minimum price"))
-		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
-			cmdColor("jp"),
-			flagColor("-f data.json"),
-			flagColor("-p '$.store.book[*].price.min()'"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Read from stdin"))
-		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
-			exampleColor("echo '{\"name\":\"jp\"}' |"),
-			cmdColor("jp"),
-			flagColor("-p '$.name'"),
-		)
-		fmt.Fprintf(os.Stderr, "%s\n", descColor("Functions:"))
-		fmt.Fprintf(os.Stderr, "  %s  %s\n",
-			flagColor("length()"),
-			descColor("Returns the length of a string, array, or object"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s  %s\n",
-			flagColor("keys()"),
-			descColor("Returns an array of the object's property names in alphabetical order"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s  %s\n",
-			flagColor("values()"),
-			descColor("Returns an array of the object's property values in key order"),
-		)
-		fmt.Fprintf(os.Stderr, "  %s  %s\n",
-			flagColor("min()"),
-			descColor("Returns the minimum value in a numeric array"),
-		)
-		fmt.Fprintf(os.Stderr, "\n%s %s\n",
-			descColor("Version:"),
-			versionColor("v1.0.2"),
-		)
+	if version {
+		printVersion()
+		return errVersion
 	}
-
-	// 解析命令行参数
-	flag.StringVar(&cfg.path, "p", "", "JSONPath expression")
-	flag.StringVar(&cfg.file, "f", "", "JSON file path")
-	flag.BoolVar(&cfg.compact, "c", false, "Compact output")
-	flag.BoolVar(&cfg.noColor, "no-color", false, "Disable colored output")
-	version := flag.Bool("v", false, "Show version")
-	flag.Parse()
-
-	// 显示版本信息
-	if *version {
-		fmt.Printf("%s %s\n",
-			descColor("jp version"),
-			versionColor("v1.0.2"),
-		)
-		os.Exit(0)
-	}
-
-	// 处理特殊命令
-	handleSpecialCommands()
-
-	// 读取输入
-	data, err := readInput(cfg.file)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	// 如果指定了 JSONPath 表达式，执行查询
-	if cfg.path != "" {
-		// 将数据重新编码为 JSON 字符串
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error marshaling data"), err)
-			os.Exit(1)
-		}
-
-		// 执行 JSONPath 查询
-		result, err := jsonpath.Query(string(jsonData), cfg.path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error executing query"), err)
-			os.Exit(1)
-		}
-		data = result
-	}
-
-	// 输出结果
-	if err := outputResult(data, cfg); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	return nil
 }
 
-// 处理特殊命令
-func handleSpecialCommands() {
-	// 如果没有参数，显示帮助
-	if len(os.Args) == 1 {
-		flag.Usage()
-		os.Exit(0)
-	}
-}
+// readInput reads JSON input from file or stdin
+func readInput(file string) (string, error) {
+	var input []byte
+	var err error
 
-// 读取输入
-func readInput(filePath string) (interface{}, error) {
-	var reader io.Reader
-
-	if filePath != "" {
-		// 从文件读取
-		file, err := os.Open(filePath)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", errorColor("error opening file"), err)
-		}
-		defer file.Close()
-		reader = file
+	if file == "" {
+		input, err = io.ReadAll(os.Stdin)
 	} else {
-		// 从标准输入读取
-		reader = os.Stdin
+		input, err = os.ReadFile(file)
+	}
+	if err != nil {
+		return "", fmt.Errorf("%s: %v", errorColor("error reading input"), err)
 	}
 
-	// 使用 decoder 直接解码 JSON
+	// Validate JSON
 	var data interface{}
-	decoder := json.NewDecoder(reader)
-	decoder.UseNumber()
-	if err := decoder.Decode(&data); err != nil {
-		return nil, fmt.Errorf("%s: %w", errorColor("error parsing JSON"), err)
+	if err := json.Unmarshal(input, &data); err != nil {
+		return "", fmt.Errorf("%s: %v", errorColor("invalid JSON"), err)
 	}
 
-	return data, nil
+	return string(input), nil
 }
 
 // 输出结果
@@ -391,4 +374,53 @@ func colorizeJSON(jsonStr string) string {
 	}
 
 	return result.String()
+}
+
+// FormatJSON formats JSON data with optional compression
+func FormatJSON(data interface{}, compress bool) string {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	if !compress {
+		enc.SetIndent("", "  ")
+	}
+	enc.SetEscapeHTML(false)
+
+	if err := enc.Encode(data); err != nil {
+		return fmt.Sprintf("%s: %v", errorColor("error encoding JSON"), err)
+	}
+
+	return strings.TrimSpace(buf.String())
+}
+
+func main() {
+	var err error
+	cfg.path, cfg.file, err = ParseFlags()
+	if err == errHelp || err == errVersion {
+		os.Exit(0)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	// Read input
+	data, err := readInput(cfg.file)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	// If JSONPath expression is specified, execute query
+	if cfg.path != "" {
+		// Execute JSONPath query
+		result, err := jsonpath.Query(data, cfg.path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error executing query"), err)
+			os.Exit(1)
+		}
+		data = FormatJSON(result, cfg.compact)
+	}
+
+	// Output result
+	fmt.Println(data)
 }
