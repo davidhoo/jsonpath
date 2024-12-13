@@ -68,22 +68,58 @@ func TestFilterQueries(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name:     "filter by value",
+			name:     "filter by value without parentheses",
+			json:     `{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}`,
+			path:     `$.items[?@.id==2]`,
+			expected: []interface{}{map[string]interface{}{"id": float64(2)}},
+		},
+		{
+			name:     "filter by value with parentheses",
 			json:     `{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}`,
 			path:     `$.items[?(@.id==2)]`,
 			expected: []interface{}{map[string]interface{}{"id": float64(2)}},
 		},
 		{
-			name:     "filter by comparison",
+			name:     "filter by comparison without parentheses",
+			json:     `{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}`,
+			path:     `$.items[?@.id>2]`,
+			expected: []interface{}{map[string]interface{}{"id": float64(3)}},
+		},
+		{
+			name:     "filter by comparison with parentheses",
 			json:     `{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}`,
 			path:     `$.items[?(@.id>2)]`,
 			expected: []interface{}{map[string]interface{}{"id": float64(3)}},
 		},
 		{
-			name:     "filter with nested field",
+			name:     "filter with nested field without parentheses",
+			json:     `{"items": [{"user": {"age": 25}}, {"user": {"age": 30}}]}`,
+			path:     `$.items[?@.user.age>27]`,
+			expected: []interface{}{map[string]interface{}{"user": map[string]interface{}{"age": float64(30)}}},
+		},
+		{
+			name:     "filter with nested field with parentheses",
 			json:     `{"items": [{"user": {"age": 25}}, {"user": {"age": 30}}]}`,
 			path:     `$.items[?(@.user.age>27)]`,
 			expected: []interface{}{map[string]interface{}{"user": map[string]interface{}{"age": float64(30)}}},
+		},
+		{
+			name:    "filter with invalid syntax",
+			json:    `{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}`,
+			path:    `$.items[?id==2]`,
+			wantErr: true,
+		},
+		{
+			name:    "filter with invalid operator",
+			json:    `{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}`,
+			path:    `$.items[?@.id=2]`,
+			wantErr: true,
+		},
+		{
+			name:    "filter with invalid value",
+			json:    `{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}`,
+			path:    `$.items[?@.id>abc]`,
+			wantErr: true,
 		},
 	}
 

@@ -89,7 +89,13 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
 		cmdColor("jp"),
 		flagColor("-f data.json"),
-		flagColor("-p '$.store.book[?(@.price > 10)]'"),
+		flagColor("-p '$.store.book[?@.price > 10]'"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Filter with multiple conditions"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.book[?@.price > 10 && @.category == \"fiction\"]'"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Use length function"))
 	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
@@ -147,6 +153,15 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("count(value)"),
 		descColor("Returns the number of occurrences of a value in an array"),
+	)
+	fmt.Fprintf(os.Stderr, "\n%s\n", descColor("Filter Syntax:"))
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?@.field > value]"),
+		descColor("Filter by comparison (>, <, >=, <=, ==, !=)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?@.field1 == value1 && @.field2 != value2]"),
+		descColor("Filter with multiple conditions"),
 	)
 	fmt.Fprintf(os.Stderr, "\n%s\n", descColor("Function Examples:"))
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",

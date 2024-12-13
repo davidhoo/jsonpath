@@ -173,12 +173,24 @@ func parseBracketSegment(content string) (segment, error) {
 // 解析过滤器表达式
 func parseFilterSegment(content string) (segment, error) {
 	// 检查语法
-	if !strings.HasPrefix(content, "(@") || !strings.HasSuffix(content, ")") {
+	if !strings.HasPrefix(content, "@") && !strings.HasPrefix(content, "(@") {
 		return nil, fmt.Errorf("invalid filter syntax: %s", content)
 	}
 
 	// 提取过滤器内容
-	content = content[2 : len(content)-1]
+	if strings.HasPrefix(content, "(@") {
+		if !strings.HasSuffix(content, ")") {
+			return nil, fmt.Errorf("invalid filter syntax: missing closing parenthesis")
+		}
+		content = content[2 : len(content)-1]
+	} else {
+		content = content[1:]
+	}
+
+	// 如果有点号，移除它
+	if strings.HasPrefix(content, ".") {
+		content = content[1:]
+	}
 
 	// 解析操作符和值
 	operators := []string{"<=", ">=", "==", "!=", "<", ">"}
@@ -197,13 +209,6 @@ func parseFilterSegment(content string) (segment, error) {
 
 	if operator == "" {
 		return nil, fmt.Errorf("invalid filter operator: %s", content)
-	}
-
-	// 从字段中移除 @ 前缀
-	if strings.HasPrefix(field, "@.") {
-		field = strings.TrimPrefix(field, "@.")
-	} else if strings.HasPrefix(field, "@") {
-		field = ""
 	}
 
 	// 解析值
@@ -308,7 +313,7 @@ func parseFunctionCall(content string) (segment, error) {
 	name := content[:openParen]
 	argsStr := content[openParen+1 : len(content)-1]
 
-	// ���析参数
+	// 解析参数
 	var args []interface{}
 	if argsStr != "" {
 		// 简单参数解析，暂时只支持数字和字符串
