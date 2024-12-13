@@ -261,4 +261,4 @@ if obj, ok := result.(map[string]interface{}); ok {
 
 ## 许可证
 
-MIT License 
+MIT License
