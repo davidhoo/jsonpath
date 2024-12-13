@@ -107,13 +107,24 @@ func main() {
 			flagColor("-f data.json"),
 			flagColor("-p '$.store.book[?(@.price > 10)]'"),
 		)
+		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Use length function"))
+		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+			cmdColor("jp"),
+			flagColor("-f data.json"),
+			flagColor("-p '$.store.book.length()'"),
+		)
 		fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Read from stdin"))
 		fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
 			exampleColor("echo '{\"name\":\"jp\"}' |"),
 			cmdColor("jp"),
 			flagColor("-p '$.name'"),
 		)
-		fmt.Fprintf(os.Stderr, "%s %s\n",
+		fmt.Fprintf(os.Stderr, "%s\n", descColor("Functions:"))
+		fmt.Fprintf(os.Stderr, "  %s  %s\n",
+			flagColor("length()"),
+			descColor("Returns the length of a string, array, or object"),
+		)
+		fmt.Fprintf(os.Stderr, "\n%s %s\n",
 			descColor("Version:"),
 			versionColor("v1.0.2"),
 		)
