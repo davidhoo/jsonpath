@@ -154,8 +154,8 @@ func printVersion() {
 
 // 颜色定义
 var (
-	keyColor        = color.New(color.FgWhite).SprintFunc()
-	keyQuoteColor   = color.New(color.FgWhite).SprintFunc()
+	keyColor        = color.New(color.FgCyan).SprintFunc()
+	keyQuoteColor   = color.New(color.FgCyan).SprintFunc()
 	stringColor     = color.New(color.FgGreen).SprintFunc()
 	valueQuoteColor = color.New(color.FgGreen).SprintFunc()
 	numberColor     = color.New(color.FgBlue).SprintFunc()
@@ -234,16 +234,33 @@ func readInput(file string) (string, error) {
 
 // 输出结果
 func outputResult(result interface{}, cfg *config) error {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", cfg.indent)
-	enc.SetEscapeHTML(false)
-
-	if err := enc.Encode(result); err != nil {
-		return fmt.Errorf("%s: %w", errorColor("error encoding JSON"), err)
+	// 如果结果是字符串，直接输出
+	if str, ok := result.(string); ok {
+		if cfg.noColor {
+			fmt.Println(str)
+		} else {
+			fmt.Println(stringColor(str))
+		}
+		return nil
 	}
 
-	output := strings.TrimSuffix(buf.String(), "\n")
+	var output string
+	if cfg.compact {
+		// 压缩输出
+		jsonBytes, err := json.Marshal(result)
+		if err != nil {
+			return fmt.Errorf("%s: %v", errorColor("error encoding JSON"), err)
+		}
+		output = string(jsonBytes)
+	} else {
+		// 格式化输出
+		jsonBytes, err := json.MarshalIndent(result, "", cfg.indent)
+		if err != nil {
+			return fmt.Errorf("%s: %v", errorColor("error encoding JSON"), err)
+		}
+		output = string(jsonBytes)
+	}
+
 	if cfg.noColor {
 		fmt.Println(output)
 	} else {
@@ -271,18 +288,18 @@ func colorizeJSON(jsonStr string) string {
 					// 开始一个字符串
 					inString = true
 					if inKey {
-						result.WriteString(keyQuoteColor("\""))
+						result.WriteString(keyQuoteColor(`"`))
 					} else {
-						result.WriteString(valueQuoteColor("\""))
+						result.WriteString(valueQuoteColor(`"`))
 					}
 				} else {
 					// 结束一个字符串
 					inString = false
 					if inKey {
-						result.WriteString(keyQuoteColor("\""))
+						result.WriteString(keyQuoteColor(`"`))
 						inKey = false
 					} else {
-						result.WriteString(valueQuoteColor("\""))
+						result.WriteString(valueQuoteColor(`"`))
 					}
 				}
 			} else {
@@ -292,6 +309,9 @@ func colorizeJSON(jsonStr string) string {
 		case '{', '}':
 			if !inString {
 				result.WriteString(braceColor(string(r)))
+				if r == '{' {
+					inKey = true
+				}
 			} else {
 				result.WriteRune(r)
 			}
@@ -306,6 +326,7 @@ func colorizeJSON(jsonStr string) string {
 		case ',':
 			if !inString {
 				result.WriteString(commaColor(string(r)))
+				inKey = true
 			} else {
 				result.WriteRune(r)
 			}
@@ -366,11 +387,6 @@ func colorizeJSON(jsonStr string) string {
 
 		prev = r
 		i += size
-
-		// 检查是否是键名
-		if !inString && len(strings.TrimSpace(result.String())) > 0 {
-			inKey = strings.HasSuffix(strings.TrimSpace(result.String()), ":")
-		}
 	}
 
 	return result.String()
@@ -410,17 +426,52 @@ func main() {
 		os.Exit(1)
 	}
 
-	// If JSONPath expression is specified, execute query
+	// 如果 JSONPath 表达式被指定，执行查询
 	if cfg.path != "" {
-		// Execute JSONPath query
+		// 执行 JSONPath 查询
 		result, err := jsonpath.Query(data, cfg.path)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error executing query"), err)
 			os.Exit(1)
 		}
-		data = FormatJSON(result, cfg.compact)
-	}
 
-	// Output result
-	fmt.Println(data)
+		// 如果结果是字符串，直接输出
+		if str, ok := result.(string); ok {
+			if cfg.noColor {
+				fmt.Println(str)
+			} else {
+				fmt.Println(stringColor(str))
+			}
+			return
+		}
+
+		// 设置缩进
+		if !cfg.compact {
+			cfg.indent = "  "
+		}
+
+		// 输出结果
+		if err := outputResult(result, &cfg); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	} else {
+		// 解析原始 JSON 数据
+		var jsonData interface{}
+		if err := json.Unmarshal([]byte(data), &jsonData); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error parsing JSON"), err)
+			os.Exit(1)
+		}
+
+		// 设置缩进
+		if !cfg.compact {
+			cfg.indent = "  "
+		}
+
+		// 输出结果
+		if err := outputResult(jsonData, &cfg); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 }
