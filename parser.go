@@ -13,9 +13,25 @@ func parse(path string) ([]segment, error) {
 		return nil, nil
 	}
 
+	// 检查并移除 $ 前缀
+	if !strings.HasPrefix(path, "$") {
+		return nil, fmt.Errorf("path must start with $")
+	}
+	path = path[1:]
+
+	// 如果路径只有 $，返回空段列表
+	if path == "" {
+		return nil, nil
+	}
+
+	// 如果下一个字符是点，移除它
+	if strings.HasPrefix(path, ".") {
+		path = path[1:]
+	}
+
 	// 处理递归下降
-	if strings.HasPrefix(path, "..") {
-		return parseRecursive(path[2:])
+	if strings.HasPrefix(path, ".") {
+		return parseRecursive(path[1:])
 	}
 
 	// 处理常规路径
@@ -263,17 +279,56 @@ func parseSliceSegment(content string) (segment, error) {
 
 // 解析索引或名称
 func parseIndexOrName(content string) (segment, error) {
-	// 尝试解析为索引
+	// 处理函数调用
+	if strings.HasSuffix(content, ")") {
+		return parseFunctionCall(content)
+	}
+
+	// 尝试解析为数字索引
 	if idx, err := strconv.Atoi(content); err == nil {
 		return &indexSegment{index: idx}, nil
 	}
 
-	// 处理引号包围的名称
-	if (strings.HasPrefix(content, "'") && strings.HasSuffix(content, "'")) ||
-		(strings.HasPrefix(content, "\"") && strings.HasSuffix(content, "\"")) {
-		name := content[1 : len(content)-1]
-		return &nameSegment{name: name}, nil
+	// 处理字符串字面量
+	if strings.HasPrefix(content, "'") && strings.HasSuffix(content, "'") {
+		return &nameSegment{name: content[1 : len(content)-1]}, nil
 	}
 
-	return nil, fmt.Errorf("invalid bracket notation: %s", content)
+	return &nameSegment{name: content}, nil
+}
+
+// 解析函数调用
+func parseFunctionCall(content string) (segment, error) {
+	// 找到函数名和参数列表
+	openParen := strings.Index(content, "(")
+	if openParen == -1 {
+		return nil, fmt.Errorf("invalid function call syntax: missing opening parenthesis")
+	}
+
+	name := content[:openParen]
+	argsStr := content[openParen+1 : len(content)-1]
+
+	// ���析参数
+	var args []interface{}
+	if argsStr != "" {
+		// 简单参数解析，暂时只支持数字和字符串
+		argParts := strings.Split(argsStr, ",")
+		args = make([]interface{}, len(argParts))
+		for i, arg := range argParts {
+			arg = strings.TrimSpace(arg)
+			// 尝试解析为数字
+			if num, err := strconv.ParseFloat(arg, 64); err == nil {
+				args[i] = num
+				continue
+			}
+			// 处理字符串参数
+			if strings.HasPrefix(arg, "'") && strings.HasSuffix(arg, "'") {
+				args[i] = arg[1 : len(arg)-1]
+				continue
+			}
+			return nil, fmt.Errorf("unsupported argument type: %s", arg)
+		}
+	}
+
+	return &functionSegment{name: name, args: args}, nil
 }
