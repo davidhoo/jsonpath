@@ -208,3 +208,117 @@ func TestKeysFunction(t *testing.T) {
 		})
 	}
 }
+
+func TestValuesFunction(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "values of object",
+			json:     `{"c": 3, "a": 1, "b": 2}`,
+			path:     "$.values()",
+			expected: []interface{}{float64(1), float64(2), float64(3)},
+		},
+		{
+			name:     "values of nested object",
+			json:     `{"store": {"book": [], "bicycle": {"color": "red"}}}`,
+			path:     "$.store.values()",
+			expected: []interface{}{map[string]interface{}{"color": "red"}, []interface{}{}},
+		},
+		{
+			name:    "values of non-object",
+			json:    `{"arr": [1, 2, 3]}`,
+			path:    "$.arr.values()",
+			wantErr: true,
+		},
+		{
+			name:     "values of object with mixed types",
+			json:     `{"active": true, "age": 42, "name": "jp", "tags": ["json", "path"]}`,
+			path:     "$.values()",
+			expected: []interface{}{true, float64(42), "jp", []interface{}{"json", "path"}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}
+
+func TestMinFunction(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "min of numbers",
+			json:     `{"nums": [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5]}`,
+			path:     "$.nums.min()",
+			expected: float64(1),
+		},
+		{
+			name:     "min of mixed types",
+			json:     `{"nums": [3, "invalid", 1, null, 4]}`,
+			path:     "$.nums.min()",
+			expected: float64(1),
+		},
+		{
+			name:    "min of empty array",
+			json:    `{"nums": []}`,
+			path:    "$.nums.min()",
+			wantErr: true,
+		},
+		{
+			name:    "min of non-numeric array",
+			json:    `{"strs": ["a", "b", "c"]}`,
+			path:    "$.strs.min()",
+			wantErr: true,
+		},
+		{
+			name:    "min of non-array",
+			json:    `{"num": 42}`,
+			path:    "$.num.min()",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}
