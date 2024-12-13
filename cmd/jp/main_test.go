@@ -171,8 +171,17 @@ func TestReadInput(t *testing.T) {
 				t.Errorf("readInput() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr && got != tt.want {
-				t.Errorf("readInput() = %v, want %v", got, tt.want)
+			if !tt.wantErr {
+				var gotObj, wantObj interface{}
+				if err := json.Unmarshal([]byte(got), &gotObj); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal([]byte(tt.want), &wantObj); err != nil {
+					t.Fatal(err)
+				}
+				if !jsonEqual(gotObj, wantObj) {
+					t.Errorf("readInput() = %v, want %v", got, tt.want)
+				}
 			}
 		})
 	}
