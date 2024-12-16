@@ -313,181 +313,172 @@ func (s *sliceSegment) String() string {
 
 // 过滤器段
 type filterSegment struct {
-	field    string
-	operator string
-	value    interface{}
+	conditions []filterCondition
+	operators  []string
 }
 
-func (s *filterSegment) evaluate(value interface{}) ([]interface{}, error) {
-	// 确保输入是数组
-	arr, ok := value.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("filter can only be applied to arrays")
+// evaluate 评估过滤器段
+func (s *filterSegment) evaluate(data interface{}) ([]interface{}, error) {
+	// 如果数据不是 map 或 slice，返回空结果
+	if data == nil {
+		return nil, nil
 	}
 
-	var result []interface{}
-	var lastErr error
-
-	for _, item := range arr {
-		matches, err := s.evaluateFilter(item)
+	// 处理 map 类型
+	if m, ok := data.(map[string]interface{}); ok {
+		result, err := s.evaluateConditions(m)
 		if err != nil {
-			lastErr = err
-			continue
+			return nil, err
 		}
-		if matches {
-			result = append(result, item)
+		if result {
+			return []interface{}{m}, nil
 		}
+		return nil, nil
 	}
 
-	// 如果没有匹配项且有错误，返回错误
-	if len(result) == 0 && lastErr != nil {
-		return nil, lastErr
+	// 处理 slice 类型
+	if arr, ok := data.([]interface{}); ok {
+		var results []interface{}
+		for _, item := range arr {
+			if m, ok := item.(map[string]interface{}); ok {
+				result, err := s.evaluateConditions(m)
+				if err != nil {
+					return nil, err
+				}
+				if result {
+					results = append(results, m)
+				}
+			}
+		}
+		return results, nil
+	}
+
+	return nil, nil
+}
+
+// evaluateConditions 评估所有条件
+func (s *filterSegment) evaluateConditions(data map[string]interface{}) (bool, error) {
+	if len(s.conditions) == 0 {
+		return false, nil
+	}
+
+	// 评估第一个条件
+	result, err := s.conditions[0].evaluate(data)
+	if err != nil {
+		return false, err
+	}
+
+	// 评估剩余条件
+	for i := 0; i < len(s.operators); i++ {
+		nextResult, err := s.conditions[i+1].evaluate(data)
+		if err != nil {
+			return false, err
+		}
+
+		// 应用逻辑运算符
+		switch s.operators[i] {
+		case "&&":
+			result = result && nextResult
+		case "||":
+			result = result || nextResult
+		}
 	}
 
 	return result, nil
 }
 
-func (s *filterSegment) evaluateFilter(item interface{}) (bool, error) {
-	// 获取字段值
-	var fieldValue interface{}
-	var err error
-
-	if s.field == "" {
-		fieldValue = item
-	} else {
-		fieldValue, err = getFieldValue(item, s.field)
-		if err != nil {
-			return false, err
-		}
-	}
-
-	// 处理 null 值比较
-	if fieldValue == nil {
-		switch s.operator {
-		case "==":
-			return s.value == nil, nil
-		case "!=":
-			return s.value != nil, nil
-		default:
-			return false, nil
-		}
-	}
-
-	// 根据值的类型进行比较
-	switch v := fieldValue.(type) {
-	case float64:
-		return s.compareNumber(v)
-	case int:
-		return s.compareNumber(float64(v))
-	case string:
-		return s.compareString(v)
-	case bool:
-		return s.compareBoolean(v)
-	default:
-		return s.compareOther(fieldValue)
-	}
-}
-
-func (s *filterSegment) compareNumber(value float64) (bool, error) {
-	// 尝试将比较值转换为数字
-	var compareValue float64
-	switch v := s.value.(type) {
-	case float64:
-		compareValue = v
-	case int:
-		compareValue = float64(v)
-	case string:
-		// 尝试将字符串转换为数字
-		num, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return false, fmt.Errorf("cannot compare number with non-numeric string: %s", v)
-		}
-		compareValue = num
-	default:
-		return false, fmt.Errorf("cannot compare number with %T", s.value)
-	}
-
-	switch s.operator {
-	case "==":
-		return value == compareValue, nil
-	case "!=":
-		return value != compareValue, nil
-	case "<":
-		return value < compareValue, nil
-	case "<=":
-		return value <= compareValue, nil
-	case ">":
-		return value > compareValue, nil
-	case ">=":
-		return value >= compareValue, nil
-	default:
-		return false, fmt.Errorf("unsupported operator for numbers: %s", s.operator)
-	}
-}
-
-func (s *filterSegment) compareString(value string) (bool, error) {
-	// 确保比较值是字符串
-	compareValue, ok := s.value.(string)
-	if !ok {
-		return false, fmt.Errorf("cannot compare string with non-string")
-	}
-
-	switch s.operator {
-	case "==":
-		return value == compareValue, nil
-	case "!=":
-		return value != compareValue, nil
-	case "<":
-		return value < compareValue, nil
-	case "<=":
-		return value <= compareValue, nil
-	case ">":
-		return value > compareValue, nil
-	case ">=":
-		return value >= compareValue, nil
-	default:
-		return false, fmt.Errorf("unsupported operator for strings: %s", s.operator)
-	}
-}
-
-func (s *filterSegment) compareBoolean(value bool) (bool, error) {
-	// 确保比较值是布尔值
-	compareValue, ok := s.value.(bool)
-	if !ok {
-		return false, fmt.Errorf("cannot compare boolean with non-boolean")
-	}
-
-	switch s.operator {
-	case "==":
-		return value == compareValue, nil
-	case "!=":
-		return value != compareValue, nil
-	default:
-		return false, fmt.Errorf("unsupported operator for booleans: %s", s.operator)
-	}
-}
-
-func (s *filterSegment) compareOther(value interface{}) (bool, error) {
-	// 处理其他类型的比较（主要是相等性比较）
-	switch s.operator {
-	case "==":
-		return reflect.DeepEqual(value, s.value), nil
-	case "!=":
-		return !reflect.DeepEqual(value, s.value), nil
-	default:
-		return false, fmt.Errorf("unsupported operator for type %T: %s", value, s.operator)
-	}
-}
-
+// String 返回过滤器段的字符串表示
 func (s *filterSegment) String() string {
-	valueStr := ""
-	switch v := s.value.(type) {
-	case string:
-		valueStr = fmt.Sprintf("%q", v)
-	default:
-		valueStr = fmt.Sprintf("%v", v)
+	var result strings.Builder
+	result.WriteString("[?")
+	for i, cond := range s.conditions {
+		if i > 0 {
+			result.WriteString(" " + s.operators[i-1] + " ")
+		}
+		result.WriteString(cond.String())
 	}
-	return fmt.Sprintf("[?(@%s%s%s)]", s.field, s.operator, valueStr)
+	result.WriteString("]")
+	return result.String()
+}
+
+// filterCondition 表示过滤器条件
+type filterCondition struct {
+	field    string
+	operator string
+	value    interface{}
+}
+
+// evaluate 评估过滤器条件
+func (c *filterCondition) evaluate(data map[string]interface{}) (bool, error) {
+	// 获取字段值
+	value, err := getFieldValue(data, c.field)
+	if err != nil {
+		return false, nil
+	}
+
+	// 比较值
+	switch c.operator {
+	case "==":
+		return compareEqual(value, c.value), nil
+	case "!=":
+		return !compareEqual(value, c.value), nil
+	case "<":
+		return compareLess(value, c.value), nil
+	case "<=":
+		return compareLessEqual(value, c.value), nil
+	case ">":
+		return compareGreater(value, c.value), nil
+	case ">=":
+		return compareGreaterEqual(value, c.value), nil
+	default:
+		return false, fmt.Errorf("unsupported operator: %s", c.operator)
+	}
+}
+
+// String 返回过滤器条件的字符串表示
+func (c *filterCondition) String() string {
+	var result strings.Builder
+	result.WriteString("@.")
+	result.WriteString(c.field)
+	result.WriteString(c.operator)
+	switch v := c.value.(type) {
+	case string:
+		result.WriteString("\"" + v + "\"")
+	default:
+		result.WriteString(fmt.Sprintf("%v", v))
+	}
+	return result.String()
+}
+
+// 比较函数
+func compareEqual(a, b interface{}) bool {
+	return reflect.DeepEqual(a, b)
+}
+
+func compareLess(a, b interface{}) bool {
+	switch va := a.(type) {
+	case float64:
+		if vb, ok := b.(float64); ok {
+			return va < vb
+		}
+	case string:
+		if vb, ok := b.(string); ok {
+			return va < vb
+		}
+	}
+	return false
+}
+
+func compareLessEqual(a, b interface{}) bool {
+	return compareLess(a, b) || compareEqual(a, b)
+}
+
+func compareGreater(a, b interface{}) bool {
+	return !compareLessEqual(a, b)
+}
+
+func compareGreaterEqual(a, b interface{}) bool {
+	return !compareLess(a, b)
 }
 
 // 多索引段

@@ -454,3 +454,150 @@ func TestCountFunction(t *testing.T) {
 		})
 	}
 }
+
+func TestLogicalOperators(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name: "logical AND",
+			json: `{
+				"books": [
+					{"category": "fiction", "price": 12.99},
+					{"category": "fiction", "price": 8.99},
+					{"category": "reference", "price": 15.99}
+				]
+			}`,
+			path:     `$.books[?@.category=="fiction" && @.price<10]`,
+			expected: []interface{}{map[string]interface{}{"category": "fiction", "price": 8.99}},
+		},
+		{
+			name: "logical OR",
+			json: `{
+				"books": [
+					{"category": "fiction", "price": 12.99},
+					{"category": "reference", "price": 8.99},
+					{"category": "fiction", "price": 15.99}
+				]
+			}`,
+			path: `$.books[?@.category=="reference" || @.price>15]`,
+			expected: []interface{}{
+				map[string]interface{}{"category": "reference", "price": 8.99},
+				map[string]interface{}{"category": "fiction", "price": 15.99},
+			},
+		},
+		{
+			name: "logical NOT",
+			json: `{
+				"books": [
+					{"category": "fiction", "price": 12.99},
+					{"category": "reference", "price": 8.99},
+					{"category": "fiction", "price": 15.99}
+				]
+			}`,
+			path:     `$.books[?!@.category=="fiction"]`,
+			expected: []interface{}{map[string]interface{}{"category": "reference", "price": 8.99}},
+		},
+		{
+			name: "complex logical expression",
+			json: `{
+				"books": [
+					{"category": "fiction", "price": 12.99, "inStock": true},
+					{"category": "reference", "price": 8.99, "inStock": false},
+					{"category": "fiction", "price": 15.99, "inStock": true},
+					{"category": "fiction", "price": 9.99, "inStock": false}
+				]
+			}`,
+			path: `$.books[?@.category=="fiction" && (@.price<10 || @.inStock==true)]`,
+			expected: []interface{}{
+				map[string]interface{}{"category": "fiction", "price": 12.99, "inStock": true},
+				map[string]interface{}{"category": "fiction", "price": 15.99, "inStock": true},
+				map[string]interface{}{"category": "fiction", "price": 9.99, "inStock": false},
+			},
+		},
+		{
+			name: "multiple AND conditions",
+			json: `{
+				"books": [
+					{"category": "fiction", "price": 12.99, "inStock": true},
+					{"category": "reference", "price": 8.99, "inStock": false},
+					{"category": "fiction", "price": 15.99, "inStock": true},
+					{"category": "fiction", "price": 9.99, "inStock": false}
+				]
+			}`,
+			path:     `$.books[?@.category=="fiction" && @.price<15 && @.inStock==true]`,
+			expected: []interface{}{map[string]interface{}{"category": "fiction", "price": 12.99, "inStock": true}},
+		},
+		{
+			name: "multiple OR conditions",
+			json: `{
+				"books": [
+					{"category": "fiction", "price": 12.99, "inStock": true},
+					{"category": "reference", "price": 8.99, "inStock": false},
+					{"category": "fiction", "price": 15.99, "inStock": true},
+					{"category": "fiction", "price": 9.99, "inStock": false}
+				]
+			}`,
+			path: `$.books[?@.price<10 || @.price>15 || @.category=="reference"]`,
+			expected: []interface{}{
+				map[string]interface{}{"category": "reference", "price": 8.99, "inStock": false},
+				map[string]interface{}{"category": "fiction", "price": 15.99, "inStock": true},
+				map[string]interface{}{"category": "fiction", "price": 9.99, "inStock": false},
+			},
+		},
+		{
+			name: "NOT with AND",
+			json: `{
+				"books": [
+					{"category": "fiction", "price": 12.99, "inStock": true},
+					{"category": "reference", "price": 8.99, "inStock": false},
+					{"category": "fiction", "price": 15.99, "inStock": true},
+					{"category": "fiction", "price": 9.99, "inStock": false}
+				]
+			}`,
+			path: `$.books[?!@.category=="reference" && @.price<10]`,
+			expected: []interface{}{
+				map[string]interface{}{"category": "fiction", "price": 9.99, "inStock": false},
+			},
+		},
+		{
+			name: "NOT with OR",
+			json: `{
+				"books": [
+					{"category": "fiction", "price": 12.99, "inStock": true},
+					{"category": "reference", "price": 8.99, "inStock": false},
+					{"category": "fiction", "price": 15.99, "inStock": true},
+					{"category": "fiction", "price": 9.99, "inStock": false}
+				]
+			}`,
+			path: `$.books[?!(@.category=="reference" || @.price>15)]`,
+			expected: []interface{}{
+				map[string]interface{}{"category": "fiction", "price": 12.99, "inStock": true},
+				map[string]interface{}{"category": "fiction", "price": 9.99, "inStock": false},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}
