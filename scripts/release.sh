@@ -1,6 +1,12 @@
 #!/bin/bash
 
-VERSION="1.0.2"
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <version>"
+    echo "Example: $0 1.0.3"
+    exit 1
+fi
+
+VERSION="$1"
 BINARY_NAME="jp"
 PLATFORMS=("darwin/amd64" "darwin/arm64" "linux/amd64" "linux/arm64")
 
@@ -23,4 +29,4 @@ done
 
 echo "Build complete. Please create a new release on GitHub with version v$VERSION"
 echo "Upload the .tar.gz files from the dist directory"
-echo "Update the Formula/jp.rb file in homebrew-tap with the new SHA256 values" 
+echo "Update the Formula/jsonpath.rb file in homebrew-tap with the new SHA256 values" 
