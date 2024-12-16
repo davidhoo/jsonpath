@@ -524,7 +524,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Read input
+	// 读取输入
 	data, err := readInput(cfg.file)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
