@@ -5,12 +5,15 @@ import (
 	"fmt"
 )
 
-// Query executes a JSONPath query on a JSON string and returns the result
-func Query(jsonStr string, path string) (interface{}, error) {
-	// Parse JSON
-	var data interface{}
-	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %v", err)
+// Query executes a JSONPath query on JSON data and returns the result
+func Query(data interface{}, path string) (interface{}, error) {
+	// If data is a string, parse it as JSON
+	if jsonStr, ok := data.(string); ok {
+		var parsedData interface{}
+		if err := json.Unmarshal([]byte(jsonStr), &parsedData); err != nil {
+			return nil, fmt.Errorf("invalid JSON: %v", err)
+		}
+		data = parsedData
 	}
 
 	// Parse path

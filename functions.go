@@ -316,7 +316,7 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("sum() cannot be applied to an empty array")
 			}
 
-			// 计算所有有效数值��总和
+			// 计算所有有效数值的总和
 			var sum float64
 			count := 0
 
@@ -379,6 +379,49 @@ var globalFunctions = map[string]Function{
 
 			// 执行匹配
 			return re.MatchString(str), nil
+		},
+	},
+	"search": &builtinFunction{
+		name: "search",
+		callback: func(args []interface{}) (interface{}, error) {
+			if len(args) != 2 {
+				return nil, fmt.Errorf("search() requires exactly 2 arguments")
+			}
+
+			// 获取数组参数
+			arr, ok := args[0].([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("first argument must be an array")
+			}
+
+			// 获取正则表达式参数
+			pattern, ok := args[1].(string)
+			if !ok {
+				return nil, fmt.Errorf("second argument must be a string pattern")
+			}
+
+			// 处理转义字符
+			pattern = strings.ReplaceAll(pattern, "\\\\", "\\")
+
+			// 编译正则表达式
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return nil, fmt.Errorf("invalid regular expression: %v", err)
+			}
+
+			// 搜索匹配的元素
+			result := make([]interface{}, 0) // 初始化为空切片而不是 nil
+			for _, item := range arr {
+				str, ok := item.(string)
+				if !ok {
+					continue // 跳过非字符串元素
+				}
+				if re.MatchString(str) {
+					result = append(result, str)
+				}
+			}
+
+			return result, nil
 		},
 	},
 }

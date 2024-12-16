@@ -1,6 +1,7 @@
 package jsonpath
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -892,6 +893,101 @@ func TestMatchFunction(t *testing.T) {
 			}
 			if !reflect.DeepEqual(result, tc.expected) {
 				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}
+
+func TestSearchFunction(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "search strings in array",
+			json:     `{"items": ["apple", "banana", "apricot", "grape"]}`,
+			path:     `$.items.search("^ap")`,
+			expected: []interface{}{"apple", "apricot"},
+		},
+		{
+			name:     "search with case insensitive pattern",
+			json:     `{"items": ["Apple", "APRICOT", "banana", "grape"]}`,
+			path:     `$.items.search("(?i)^ap")`,
+			expected: []interface{}{"Apple", "APRICOT"},
+		},
+		{
+			name:     "search with no matches",
+			json:     `{"items": ["apple", "banana", "grape"]}`,
+			path:     `$.items.search("^x")`,
+			expected: []interface{}{},
+		},
+		{
+			name:     "search in array with non-string elements",
+			json:     `{"items": ["apple", 42, "apricot", true]}`,
+			path:     `$.items.search("^ap")`,
+			expected: []interface{}{"apple", "apricot"},
+		},
+		{
+			name:     "search with special characters",
+			json:     `{"items": ["123-456", "abc-def", "789-012"]}`,
+			path:     `$.items.search("^\\d{3}-\\d{3}$")`,
+			expected: []interface{}{"123-456", "789-012"},
+		},
+		{
+			name:    "search with invalid pattern",
+			json:    `{"items": ["apple", "banana"]}`,
+			path:    `$.items.search("(invalid")`,
+			wantErr: true,
+		},
+		{
+			name:    "search with missing pattern",
+			json:    `{"items": ["apple", "banana"]}`,
+			path:    `$.items.search()`,
+			wantErr: true,
+		},
+		{
+			name:    "search with non-string pattern",
+			json:    `{"items": ["apple", "banana"]}`,
+			path:    `$.items.search(123)`,
+			wantErr: true,
+		},
+		{
+			name:    "search on non-array",
+			json:    `{"text": "apple"}`,
+			path:    `$.text.search("^ap")`,
+			wantErr: true,
+		},
+		{
+			name:     "search in filter expression",
+			json:     `{"fruits": [{"name": "apple"}, {"name": "banana"}, {"name": "apricot"}]}`,
+			path:     `$.fruits[?@.name.match("^ap")].name`,
+			expected: []interface{}{"apple", "apricot"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var data interface{}
+			if err := json.Unmarshal([]byte(tc.json), &data); err != nil {
+				t.Fatalf("failed to parse JSON: %v", err)
+			}
+
+			result, err := Query(data, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("expected %v, got %v", tc.expected, result)
 			}
 		})
 	}
