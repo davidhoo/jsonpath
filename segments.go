@@ -3,7 +3,6 @@ package jsonpath
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -440,33 +439,6 @@ type filterCondition struct {
 	value    interface{}
 }
 
-// evaluate 评估过滤器条件
-func (c *filterCondition) evaluate(data map[string]interface{}) (bool, error) {
-	// 获取字段值
-	value, err := getFieldValue(data, c.field)
-	if err != nil {
-		return false, nil
-	}
-
-	// 比较值
-	switch c.operator {
-	case "==":
-		return compareEqual(value, c.value), nil
-	case "!=":
-		return !compareEqual(value, c.value), nil
-	case "<":
-		return compareLess(value, c.value), nil
-	case "<=":
-		return compareLessEqual(value, c.value), nil
-	case ">":
-		return compareGreater(value, c.value), nil
-	case ">=":
-		return compareGreaterEqual(value, c.value), nil
-	default:
-		return false, fmt.Errorf("unsupported operator: %s", c.operator)
-	}
-}
-
 // String 返回过滤器条件的字符串表示
 func (c *filterCondition) String() string {
 	var result strings.Builder
@@ -480,37 +452,6 @@ func (c *filterCondition) String() string {
 		result.WriteString(fmt.Sprintf("%v", v))
 	}
 	return result.String()
-}
-
-// 比较函数
-func compareEqual(a, b interface{}) bool {
-	return reflect.DeepEqual(a, b)
-}
-
-func compareLess(a, b interface{}) bool {
-	switch va := a.(type) {
-	case float64:
-		if vb, ok := b.(float64); ok {
-			return va < vb
-		}
-	case string:
-		if vb, ok := b.(string); ok {
-			return va < vb
-		}
-	}
-	return false
-}
-
-func compareLessEqual(a, b interface{}) bool {
-	return compareLess(a, b) || compareEqual(a, b)
-}
-
-func compareGreater(a, b interface{}) bool {
-	return !compareLessEqual(a, b)
-}
-
-func compareGreaterEqual(a, b interface{}) bool {
-	return !compareLess(a, b)
 }
 
 // 多索引段
