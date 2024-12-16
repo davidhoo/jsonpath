@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 // 解析 JSONPath 表达式
@@ -18,17 +17,15 @@ func parse(path string) ([]segment, error) {
 	if !strings.HasPrefix(path, "$") {
 		return nil, fmt.Errorf("path must start with $")
 	}
-	path = path[1:]
+	path = strings.TrimPrefix(path, "$")
 
 	// 如果路径只有 $，返回空段列表
 	if path == "" {
 		return nil, nil
 	}
 
-	// 如果下一个字符是点，移除它
-	if strings.HasPrefix(path, ".") {
-		path = path[1:]
-	}
+	// 移除前导点
+	path = strings.TrimPrefix(path, ".")
 
 	// 处理递归下降
 	if strings.HasPrefix(path, ".") {
@@ -49,10 +46,8 @@ func parseRecursive(path string) ([]segment, error) {
 		return segments, nil
 	}
 
-	// 处理后续路径
-	if strings.HasPrefix(path, ".") {
-		path = path[1:]
-	}
+	// 移除前导点
+	path = strings.TrimPrefix(path, ".")
 
 	// 如果还有路径，继续解析
 	if path != "" {
@@ -274,7 +269,7 @@ func applyDeMorgan(expr string) (string, error) {
 	return result.String(), nil
 }
 
-// 解析过滤器表达��
+// 解析过滤器表达式
 func parseFilterSegment(content string) (segment, error) {
 	// 检查语法
 	if !strings.HasPrefix(content, "@") && !strings.HasPrefix(content, "(@") && !strings.HasPrefix(content, "!") && !strings.HasPrefix(content, "(!") {
@@ -454,10 +449,8 @@ func parseFilterCondition(condStr string) (filterCondition, error) {
 	valueStr = strings.TrimSpace(condStr[opIndex+opLen:])
 
 	// 处理字段名（移除 @ 和可能的前导点）
-	field = field[1:] // 移除 @
-	if strings.HasPrefix(field, ".") {
-		field = field[1:]
-	}
+	field = strings.TrimPrefix(field, "@") // 移除 @
+	field = strings.TrimPrefix(field, ".") // 移除前导点
 
 	// 解析值
 	value, err := parseFilterValue(valueStr)
@@ -504,33 +497,10 @@ func parseFilterValue(valueStr string) (interface{}, error) {
 	return nil, fmt.Errorf("invalid value: %s", valueStr)
 }
 
-// 检查是否是有效的标识符
-func isValidIdentifier(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-
-	// 第一个字符必须是字母或下划线
-	if !unicode.IsLetter(rune(s[0])) && s[0] != '_' {
-		return false
-	}
-
-	// 其余字符必须是字母、数字或下划线
-	for i := 1; i < len(s); i++ {
-		if !unicode.IsLetter(rune(s[i])) && !unicode.IsDigit(rune(s[i])) && s[i] != '_' {
-			return false
-		}
-	}
-
-	return true
-}
-
 // getFieldValue 获取对象中指定字段的值
 func getFieldValue(obj interface{}, field string) (interface{}, error) {
-	// 移除开头的点
-	if strings.HasPrefix(field, ".") {
-		field = field[1:]
-	}
+	// 移除前导点
+	field = strings.TrimPrefix(field, ".")
 
 	// 分割字段路径
 	parts := strings.Split(field, ".")
@@ -719,7 +689,7 @@ func splitLogicalOperators(content string) ([]string, []string, error) {
 			continue
 		}
 
-		// 检查��辑运算符
+		// 检查逻辑运算符
 		if i+1 < len(content) {
 			op := content[i : i+2]
 			if (op == "&&" || op == "||") && !inQuotes && inParens == 0 {
