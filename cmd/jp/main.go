@@ -184,6 +184,14 @@ func printHelp() {
 		flagColor("count(value)"),
 		descColor("Returns the number of occurrences of a value in an array"),
 	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("match(regex)"),
+		descColor("Returns true if the string matches the regular expression pattern"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("search(regex)"),
+		descColor("Returns an array of strings that match the regular expression pattern"),
+	)
 	fmt.Fprintf(os.Stderr, "\n%s\n", descColor("Filter Syntax:"))
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("[?@.field > value]"),
