@@ -53,7 +53,7 @@ func main() {
 	}
 	fmt.Println("所有价格:", example2)
 
-	// 示例 3: 获取特定价格范��的书籍
+	// 示例 3: 获取特定价格范围的书籍
 	example3, err := getBooksInPriceRange(data, 10)
 	if err != nil {
 		log.Fatal(err)
@@ -84,25 +84,16 @@ func main() {
 
 // 获取所有作者
 func getAuthors(data interface{}) ([]string, error) {
-	// 编译 JSONPath 表达式
-	jp, err := jsonpath.Compile("$.store.book[*].author")
+	result, err := jsonpath.Query(data, "$.store.book[*].author")
 	if err != nil {
-		return nil, fmt.Errorf("编译表达式失败: %v", err)
+		return nil, fmt.Errorf("查询失败: %v", err)
 	}
 
-	// 执行查询
-	result, err := jp.Execute(data)
-	if err != nil {
-		return nil, fmt.Errorf("执行查询失败: %v", err)
-	}
-
-	// 转换结果为字符串数组
 	authors, ok := result.([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("结果类型不匹配")
 	}
 
-	// 提取作者名字
 	var names []string
 	for _, author := range authors {
 		if name, ok := author.(string); ok {
@@ -115,12 +106,7 @@ func getAuthors(data interface{}) ([]string, error) {
 
 // 获取所有价格
 func getAllPrices(data interface{}) ([]float64, error) {
-	jp, err := jsonpath.Compile("$..price")
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := jp.Execute(data)
+	result, err := jsonpath.Query(data, "$..price")
 	if err != nil {
 		return nil, err
 	}
@@ -142,12 +128,7 @@ func getAllPrices(data interface{}) ([]float64, error) {
 
 // 获取特定价格范围的书籍
 func getBooksInPriceRange(data interface{}, maxPrice float64) ([]string, error) {
-	jp, err := jsonpath.Compile(fmt.Sprintf("$.store.book[?(@.price < %v)].title", maxPrice))
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := jp.Execute(data)
+	result, err := jsonpath.Query(data, fmt.Sprintf("$.store.book[?(@.price < %v)].title", maxPrice))
 	if err != nil {
 		return nil, err
 	}
@@ -167,15 +148,9 @@ func getBooksInPriceRange(data interface{}, maxPrice float64) ([]string, error) 
 	return bookTitles, nil
 }
 
-// 使用通配符和过滤器的复杂查询
+// 使用通配符和过滤器的查询
 func getSpecificBooks(data interface{}) ([]interface{}, error) {
-	// 获取所有价格大于 10 的书籍
-	jp, err := jsonpath.Compile("$.store.book[?(@.price > 10)]")
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := jp.Execute(data)
+	result, err := jsonpath.Query(data, "$.store.book[?(@.price > 10)]")
 	if err != nil {
 		return nil, err
 	}
@@ -190,13 +165,7 @@ func getSpecificBooks(data interface{}) ([]interface{}, error) {
 
 // 使用复杂过滤条件的查询
 func getComplexFilteredBooks(data interface{}) ([]interface{}, error) {
-	// 获取所有价格大于 10 且类别为 fiction 的书籍
-	jp, err := jsonpath.Compile("$.store.book[?(@.price > 10 && @.category == 'fiction')]")
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := jp.Execute(data)
+	result, err := jsonpath.Query(data, "$.store.book[?(@.price > 10 && @.category == 'fiction')]")
 	if err != nil {
 		return nil, err
 	}
@@ -211,13 +180,7 @@ func getComplexFilteredBooks(data interface{}) ([]interface{}, error) {
 
 // 使用否定过滤条件的查询
 func getNonReferenceBooks(data interface{}) ([]interface{}, error) {
-	// 获取所有非参考类的书籍
-	jp, err := jsonpath.Compile("$.store.book[?!(@.category == 'reference')]")
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := jp.Execute(data)
+	result, err := jsonpath.Query(data, "$.store.book[?!(@.category == 'reference')]")
 	if err != nil {
 		return nil, err
 	}
