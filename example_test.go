@@ -449,6 +449,78 @@ func TestMaxFunction(t *testing.T) {
 	}
 }
 
+func TestAvgFunction(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "avg of numbers",
+			json:     `{"nums": [2, 4, 6, 8, 10]}`,
+			path:     "$.nums.avg()",
+			expected: float64(6),
+		},
+		{
+			name:     "avg of mixed types",
+			json:     `{"nums": [3, "invalid", 1, null, 4]}`,
+			path:     "$.nums.avg()",
+			expected: float64(8.0 / 3.0),
+		},
+		{
+			name:    "avg of empty array",
+			json:    `{"nums": []}`,
+			path:    "$.nums.avg()",
+			wantErr: true,
+		},
+		{
+			name:    "avg of non-numeric array",
+			json:    `{"strs": ["a", "b", "c"]}`,
+			path:    "$.strs.avg()",
+			wantErr: true,
+		},
+		{
+			name:    "avg of non-array",
+			json:    `{"num": 42}`,
+			path:    "$.num.avg()",
+			wantErr: true,
+		},
+		{
+			name:     "avg of single number",
+			json:     `{"nums": [42]}`,
+			path:     "$.nums.avg()",
+			expected: float64(42),
+		},
+		{
+			name:     "avg of decimal numbers",
+			json:     `{"nums": [1.5, 2.5, 3.5]}`,
+			path:     "$.nums.avg()",
+			expected: float64(2.5),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}
+
 func TestCountFunction(t *testing.T) {
 	testCases := []struct {
 		name     string

@@ -173,6 +173,10 @@ func printHelp() {
 		descColor("Returns the maximum value in a numeric array (ignores non-numeric values)"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("avg()"),
+		descColor("Returns the average value in a numeric array (ignores non-numeric values)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("count(value)"),
 		descColor("Returns the number of occurrences of a value in an array"),
 	)
@@ -246,6 +250,18 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("max()"),
 		descColor("$.store.book[*].price.max()        # Get maximum price"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("avg()"),
+		descColor("$.numbers.avg()                    # [2, 4, 6] -> 4"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("avg()"),
+		descColor("$.mixed.avg()                      # [3, \"a\", 1, null] -> 2"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("avg()"),
+		descColor("$.store.book[*].price.avg()        # Get average price"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("count(number)"),
