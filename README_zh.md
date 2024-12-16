@@ -35,12 +35,14 @@
 ## 新特性
 
 ### v1.0.4
+
 - 集中管理版本号
   - 添加 version.go 用于集中版本控制
   - 更新 cmd/jp 使用集中管理的版本号
   - 修复中文注释的 UTF-8 编码问题
 
 ### v1.0.3
+
 - 增强的过滤表达式
   - 完整支持逻辑运算符（`&&`、`||`、`!`）
   - 正确处理复杂的过滤条件
@@ -57,6 +59,7 @@
   - 修复示例中的 UTF-8 编码问题
 
 ### v1.0.2
+
 - 增强的过滤表达式
   - 完整支持逻辑运算符（`&&`、`||`、`!`）
   - 正确处理复杂的过滤条件
@@ -71,9 +74,9 @@
   - 修复中文字符显示
   - 正确处理多字节字符
 
-## 安装
+## 安装方式
 
-### 使用 Homebrew（推荐）
+### Homebrew 安装��推荐）
 
 ```bash
 # 添加 tap
@@ -83,25 +86,25 @@ brew tap davidhoo/tap
 brew install jsonpath
 ```
 
-### 使用 Go Install
+### Go 模块安装
 
 ```bash
 go install github.com/davidhoo/jsonpath/cmd/jp@latest
 ```
 
-### 手动安装
+### 二进制安装
 
 从 [releases 页面](https://github.com/davidhoo/jsonpath/releases) 下载适合你平台的二进制文件。
 
-## 命令行使用
+## 命令行使用方法
 
-### 基本用法
+### 命令行参数
 
 ```bash
 jp [-p <jsonpath表达式>] [-f <json文件>] [-c]
 ```
 
-选项：
+### 命令行选项
 
 - `-p` JSONPath 表达式（如果不指定，输出整个 JSON）
 - `-f` JSON 文件路径（如果不指定，从标准输入读取）
@@ -110,7 +113,7 @@ jp [-p <jsonpath表达式>] [-f <json文件>] [-c]
 - `-h` 显示帮助信息
 - `-v` 显示版本信息
 
-### 示例
+### 命令行示例
 
 ```bash
 # 输出整个 JSON，带语法高亮
@@ -129,9 +132,9 @@ echo '{"name": "John"}' | jp -p '$.name'
 jp -f data.json -c
 ```
 
-## Go 库使用
+## Go 库使用方法
 
-### 基本用法
+### Go 库基本用法
 
 ```go
 import "github.com/davidhoo/jsonpath"
@@ -149,7 +152,7 @@ if !ok {
 }
 ```
 
-### 完整示例
+### 完整代码示例
 
 ```go
 package main
@@ -230,7 +233,7 @@ func main() {
 "$.store.book[?(@.price > 10 || @.author == 'Evelyn Waugh')]"
 ```
 
-### 结果处理
+### 结果处理方法
 
 根据结果类型使用类型断言处理结果：
 
