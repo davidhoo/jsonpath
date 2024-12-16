@@ -205,7 +205,7 @@ func main() {
 // Get all prices (recursive)
 "$..price"
 
-// Get books within price range
+// Get books with specific price range
 "$.store.book[?(@.price < 10)].title"
 
 // Get all authors
@@ -220,14 +220,38 @@ func main() {
 // Get first two books
 "$.store.book[0:2]"
 
-// Get all books with price > 10 and category == 'fiction'
+// Get books with price > 10 and category == fiction
 "$.store.book[?(@.price > 10 && @.category == 'fiction')]"
 
-// Get all books that are not reference books
+// Get all non-reference books
 "$.store.book[?(!(@.category == 'reference'))]"
 
-// Get all books with price > 10 or author containing 'Evelyn'
+// Get books with price > 10 or author containing 'Evelyn'
 "$.store.book[?(@.price > 10 || @.author == 'Evelyn Waugh')]"
+
+// Get length of book array
+"$.store.book.length()"
+
+// Get all keys of store object
+"$.store.keys()"
+
+// Get all values of store object
+"$.store.values()"
+
+// Get minimum book price
+"$.store.book[*].price.min()"
+
+// Get maximum book price
+"$.store.book[*].price.max()"
+
+// Get average book price
+"$.store.book[*].price.avg()"
+
+// Get total price of all books
+"$.store.book[*].price.sum()"
+
+// Count fiction books
+"$.store.book[*].category.count('fiction')"
 ```
 
 ### Result Handling

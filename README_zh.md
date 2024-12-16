@@ -76,7 +76,7 @@
 
 ## 安装方式
 
-### Homebrew 安装��推荐）
+### Homebrew 安装（推荐）
 
 ```bash
 # 添加 tap
@@ -145,7 +145,7 @@ if err != nil {
     log.Fatal(err)
 }
 
-// 处理结果
+// 处理���果
 authors, ok := result.([]interface{})
 if !ok {
     log.Fatal("unexpected result type")
@@ -231,6 +231,30 @@ func main() {
 
 // 获取价格大于 10 或作者为 Evelyn 的书籍
 "$.store.book[?(@.price > 10 || @.author == 'Evelyn Waugh')]"
+
+// 获取书籍数组的长度
+"$.store.book.length()"
+
+// 获取商店对象的所有键
+"$.store.keys()"
+
+// 获取商店对象的所有值
+"$.store.values()"
+
+// 获取最低书价
+"$.store.book[*].price.min()"
+
+// 获取最高书价
+"$.store.book[*].price.max()"
+
+// 获取平均书价
+"$.store.book[*].price.avg()"
+
+// 获取所有书籍的总价
+"$.store.book[*].price.sum()"
+
+// 统计小说类书籍数量
+"$.store.book[*].category.count('fiction')"
 ```
 
 ### 结果处理方法
