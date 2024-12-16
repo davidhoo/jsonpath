@@ -521,6 +521,84 @@ func TestAvgFunction(t *testing.T) {
 	}
 }
 
+func TestSumFunction(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "sum of numbers",
+			json:     `{"nums": [2, 4, 6, 8, 10]}`,
+			path:     "$.nums.sum()",
+			expected: float64(30),
+		},
+		{
+			name:     "sum of mixed types",
+			json:     `{"nums": [3, "invalid", 1, null, 4]}`,
+			path:     "$.nums.sum()",
+			expected: float64(8),
+		},
+		{
+			name:    "sum of empty array",
+			json:    `{"nums": []}`,
+			path:    "$.nums.sum()",
+			wantErr: true,
+		},
+		{
+			name:    "sum of non-numeric array",
+			json:    `{"strs": ["a", "b", "c"]}`,
+			path:    "$.strs.sum()",
+			wantErr: true,
+		},
+		{
+			name:    "sum of non-array",
+			json:    `{"num": 42}`,
+			path:    "$.num.sum()",
+			wantErr: true,
+		},
+		{
+			name:     "sum of single number",
+			json:     `{"nums": [42]}`,
+			path:     "$.nums.sum()",
+			expected: float64(42),
+		},
+		{
+			name:     "sum of decimal numbers",
+			json:     `{"nums": [1.5, 2.5, 3.5]}`,
+			path:     "$.nums.sum()",
+			expected: float64(7.5),
+		},
+		{
+			name:     "sum of negative numbers",
+			json:     `{"nums": [-1, -2, -3, -4, -5]}`,
+			path:     "$.nums.sum()",
+			expected: float64(-15),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}
+
 func TestCountFunction(t *testing.T) {
 	testCases := []struct {
 		name     string

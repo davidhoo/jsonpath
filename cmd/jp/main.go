@@ -177,6 +177,10 @@ func printHelp() {
 		descColor("Returns the average value in a numeric array (ignores non-numeric values)"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("sum()"),
+		descColor("Returns the sum of all numeric values in an array (ignores non-numeric values)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("count(value)"),
 		descColor("Returns the number of occurrences of a value in an array"),
 	)
@@ -262,6 +266,18 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("avg()"),
 		descColor("$.store.book[*].price.avg()        # Get average price"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("sum()"),
+		descColor("$.numbers.sum()                    # [2, 4, 6] -> 12"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("sum()"),
+		descColor("$.mixed.sum()                      # [3, \"a\", 1, null] -> 4"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("sum()"),
+		descColor("$.store.book[*].price.sum()        # Get total price"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("count(number)"),

@@ -90,7 +90,7 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("values() requires exactly 1 argument")
 			}
 
-			// 确保参数是对象
+			// 确保参数是��象
 			obj, ok := args[0].(map[string]interface{})
 			if !ok {
 				return nil, fmt.Errorf("values() argument must be an object")
@@ -295,6 +295,55 @@ var globalFunctions = map[string]Function{
 			}
 
 			return sum / float64(count), nil
+		},
+	},
+	"sum": &builtinFunction{
+		name: "sum",
+		callback: func(args []interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("sum() requires exactly 1 argument")
+			}
+
+			// 确保参数是数组
+			arr, ok := args[0].([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("sum() argument must be an array")
+			}
+
+			if len(arr) == 0 {
+				return nil, fmt.Errorf("sum() cannot be applied to an empty array")
+			}
+
+			// 计算所有有效数值的总和
+			var sum float64
+			count := 0
+
+			for _, item := range arr {
+				var num float64
+				switch v := item.(type) {
+				case float64:
+					num = v
+				case int:
+					num = float64(v)
+				case json.Number:
+					var err error
+					num, err = v.Float64()
+					if err != nil {
+						continue // 跳过无效的数值
+					}
+				default:
+					continue // 跳过非数值类型
+				}
+
+				sum += num
+				count++
+			}
+
+			if count == 0 {
+				return nil, fmt.Errorf("sum() no valid numbers in array")
+			}
+
+			return sum, nil
 		},
 	},
 }
