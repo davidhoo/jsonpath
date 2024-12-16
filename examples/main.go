@@ -53,7 +53,7 @@ func main() {
 	}
 	fmt.Println("所有价格:", example2)
 
-	// 示例 3: 获取特定价格范��的书籍
+	// 示例 3: 获取特定价格范围的书籍
 	example3, err := getBooksInPriceRange(data, 10)
 	if err != nil {
 		log.Fatal(err)
