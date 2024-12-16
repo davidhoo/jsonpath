@@ -389,6 +389,66 @@ func TestMinFunction(t *testing.T) {
 	}
 }
 
+func TestMaxFunction(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "max of numbers",
+			json:     `{"nums": [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5]}`,
+			path:     "$.nums.max()",
+			expected: float64(9),
+		},
+		{
+			name:     "max of mixed types",
+			json:     `{"nums": [3, "invalid", 1, null, 4]}`,
+			path:     "$.nums.max()",
+			expected: float64(4),
+		},
+		{
+			name:    "max of empty array",
+			json:    `{"nums": []}`,
+			path:    "$.nums.max()",
+			wantErr: true,
+		},
+		{
+			name:    "max of non-numeric array",
+			json:    `{"strs": ["a", "b", "c"]}`,
+			path:    "$.strs.max()",
+			wantErr: true,
+		},
+		{
+			name:    "max of non-array",
+			json:    `{"num": 42}`,
+			path:    "$.num.max()",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}
+
 func TestCountFunction(t *testing.T) {
 	testCases := []struct {
 		name     string

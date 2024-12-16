@@ -169,6 +169,10 @@ func printHelp() {
 		descColor("Returns the minimum value in a numeric array (ignores non-numeric values)"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("max()"),
+		descColor("Returns the maximum value in a numeric array (ignores non-numeric values)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("count(value)"),
 		descColor("Returns the number of occurrences of a value in an array"),
 	)
@@ -230,6 +234,18 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("min()"),
 		descColor("$.store.book[*].price.min()        # Get minimum price"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("max()"),
+		descColor("$.numbers.max()                    # [3, 1, 4] -> 4"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("max()"),
+		descColor("$.mixed.max()                      # [3, \"a\", 1, null] -> 3"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("max()"),
+		descColor("$.store.book[*].price.max()        # Get maximum price"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("count(number)"),

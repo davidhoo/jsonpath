@@ -90,7 +90,7 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("values() requires exactly 1 argument")
 			}
 
-			// 确保参数是对象
+			// 确保参数是��象
 			obj, ok := args[0].(map[string]interface{})
 			if !ok {
 				return nil, fmt.Errorf("values() argument must be an object")
@@ -190,6 +190,62 @@ var globalFunctions = map[string]Function{
 			}
 
 			return minVal, nil
+		},
+	},
+	"max": &builtinFunction{
+		name: "max",
+		callback: func(args []interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("max() requires exactly 1 argument")
+			}
+
+			// 确保参数是数组
+			arr, ok := args[0].([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("max() argument must be an array")
+			}
+
+			if len(arr) == 0 {
+				return nil, fmt.Errorf("max() cannot be applied to an empty array")
+			}
+
+			// 找到第一个数值作为初始值
+			var maxVal float64
+			initialized := false
+
+			for _, item := range arr {
+				var num float64
+				switch v := item.(type) {
+				case float64:
+					num = v
+				case int:
+					num = float64(v)
+				case json.Number:
+					var err error
+					num, err = v.Float64()
+					if err != nil {
+						continue // 跳过无效的数值
+					}
+				default:
+					continue // 跳过非数值类型
+				}
+
+				if !initialized {
+					maxVal = num
+					initialized = true
+					continue
+				}
+
+				if num > maxVal {
+					maxVal = num
+				}
+			}
+
+			if !initialized {
+				return nil, fmt.Errorf("max() no valid numbers in array")
+			}
+
+			return maxVal, nil
 		},
 	},
 }
