@@ -32,8 +32,15 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
   - Rich examples
   - Comprehensive documentation
 
-## What's New in v1.0.3
+## What's New
 
+### v1.0.4
+- Centralize version management
+  - Add version.go for centralized version control
+  - Update cmd/jp to use centralized version
+  - Fix UTF-8 encoding in Chinese comments
+
+### v1.0.3
 - Enhanced filter expressions
   - Full support for logical operators (`&&`, `||`, `!`)
   - Proper handling of complex filter conditions
@@ -48,6 +55,21 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
   - New examples demonstrating logical operators
   - Updated code to use new `Query` function
   - Fixed UTF-8 encoding issues in examples
+
+### v1.0.2
+- Enhanced filter expressions
+  - Full support for logical operators (`&&`, `||`, `!`)
+  - Proper handling of complex filter conditions
+  - Support for De Morgan's Law in negated expressions
+  - Improved numeric and string comparisons
+  - Better error messages
+- Enhanced colorized output
+  - Beautiful syntax highlighting for JSON
+  - Colorful command-line interface
+  - Improved readability for nested structures
+- Better UTF-8 support
+  - Fixed CJK character display
+  - Proper handling of multi-byte characters
 
 ## Installation
 
