@@ -97,6 +97,24 @@ func printHelp() {
 		flagColor("-f data.json"),
 		flagColor("-p '$.store.book[?@.price > 10 && @.category == \"fiction\"]'"),
 	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Filter with logical OR"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.book[?@.price < 10 || @.category == \"fiction\"]'"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Filter with NOT"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.book[?!(@.category == \"reference\")]'"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Filter with complex conditions"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		cmdColor("jp"),
+		flagColor("-f data.json"),
+		flagColor("-p '$.store.book[?(@.price > 10 && (@.category == \"fiction\" || @.author == \"Evelyn Waugh\"))]'"),
+	)
 	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Use length function"))
 	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
 		cmdColor("jp"),
@@ -161,7 +179,44 @@ func printHelp() {
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("[?@.field1 == value1 && @.field2 != value2]"),
-		descColor("Filter with multiple conditions"),
+		descColor("Filter with logical AND (&&)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?@.field1 == value1 || @.field2 == value2]"),
+		descColor("Filter with logical OR (||)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?!(@.field == value)]"),
+		descColor("Filter with logical NOT (!)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?!(@.field1 == value1 && @.field2 == value2)]"),
+		descColor("Complex NOT expression (applies De Morgan's Law)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?(@.field1 > 10 && (@.field2 == 'value' || @.field3 != null))]"),
+		descColor("Nested conditions with parentheses"),
+	)
+	fmt.Fprintf(os.Stderr, "\n%s\n", descColor("Filter Examples:"))
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?@.price > 10]"),
+		descColor("$.store.book[?@.price > 10]                # Books over $10"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?@.category == 'fiction']"),
+		descColor("$.store.book[?@.category == 'fiction']     # Fiction books"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?@.price > 10 && @.category == 'fiction']"),
+		descColor("# Fiction books over $10"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?!(@.category == 'reference')]"),
+		descColor("# Books that are not reference books"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("[?@.price < 10 || @.category == 'fiction']"),
+		descColor("# Books under $10 or fiction books"),
 	)
 	fmt.Fprintf(os.Stderr, "\n%s\n", descColor("Function Examples:"))
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
@@ -476,7 +531,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 如果 JSONPath 表达式被指定，执行查询
+	// 如��� JSONPath 表达式被指定，执行查询
 	if cfg.path != "" {
 		// 执行 JSONPath 查询
 		result, err := jsonpath.Query(data, cfg.path)

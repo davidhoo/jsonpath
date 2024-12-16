@@ -34,6 +34,12 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
 
 ## What's New in v1.0.2
 
+- Enhanced filter expressions
+  - Full support for logical operators (`&&`, `||`, `!`)
+  - Proper handling of complex filter conditions
+  - Support for De Morgan's Law in negated expressions
+  - Improved numeric and string comparisons
+  - Better error messages
 - Enhanced colorized output
   - Beautiful syntax highlighting for JSON
   - Colorful command-line interface
@@ -41,10 +47,6 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
 - Better UTF-8 support
   - Fixed CJK character display
   - Proper handling of multi-byte characters
-- Improved filter expressions
-  - Fixed numeric comparisons
-  - Better error messages
-  - Support for direct value comparisons
 
 ## Installation
 
@@ -206,8 +208,14 @@ func main() {
 // Get first two books
 "$.store.book[0:2]"
 
-// Get all books with price > 10
-"$.store.book[?(@.price > 10)]"
+// Get all books with price > 10 and category == 'fiction'
+"$.store.book[?(@.price > 10 && @.category == 'fiction')]"
+
+// Get all books that are not reference books
+"$.store.book[?(!(@.category == 'reference'))]"
+
+// Get all books with price > 10 or author containing 'Evelyn'
+"$.store.book[?(@.price > 10 || @.author == 'Evelyn Waugh')]"
 ```
 
 ### Result Handling
@@ -242,8 +250,11 @@ if obj, ok := result.(map[string]interface{}); ok {
 
 2. Filter Support
    - Comparison operators: `<`, `>`, `<=`, `>=`, `==`, `!=`
-   - Currently supports numeric comparisons
-   - Future support for string comparisons and logical operators
+   - Logical operators: `&&`, `||`, `!`
+   - Support for complex filter conditions
+   - Support for numeric and string comparisons
+   - Proper handling of negated expressions using De Morgan's Law
+   - Nested filter conditions with parentheses
 
 3. Result Handling
    - Array operations return array results
