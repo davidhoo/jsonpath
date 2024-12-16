@@ -245,7 +245,7 @@ func printHelp() {
 	)
 	fmt.Fprintf(os.Stderr, "\n%s %s\n",
 		descColor("Version:"),
-		versionColor("v1.0.2"),
+		versionColor(jsonpath.VersionWithPrefix()),
 	)
 }
 
@@ -253,7 +253,7 @@ func printHelp() {
 func printVersion() {
 	fmt.Printf("%s %s\n",
 		descColor("jp version"),
-		versionColor("v1.0.2"),
+		versionColor(jsonpath.VersionWithPrefix()),
 	)
 }
 
@@ -531,7 +531,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 如��� JSONPath 表达式被指定，执行查询
+	// 如果 JSONPath 表达式被指定，执行查询
 	if cfg.path != "" {
 		// 执行 JSONPath 查询
 		result, err := jsonpath.Query(data, cfg.path)
