@@ -53,7 +53,7 @@ func main() {
 	}
 	fmt.Println("所有价格:", example2)
 
-	// 示例 3: 获取特定价格范围的书籍
+	// 示例 3: 获取特定价格范��的书籍
 	example3, err := getBooksInPriceRange(data, 10)
 	if err != nil {
 		log.Fatal(err)
@@ -66,6 +66,20 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("特定条件的书籍:", example4)
+
+	// 示例 5: 使用复杂过滤条件
+	example5, err := getComplexFilteredBooks(data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("复杂条件过滤的书籍:", example5)
+
+	// 示例 6: 使用否定过滤条件
+	example6, err := getNonReferenceBooks(data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("非参考类书籍:", example6)
 }
 
 // 获取所有作者
@@ -157,6 +171,48 @@ func getBooksInPriceRange(data interface{}, maxPrice float64) ([]string, error) 
 func getSpecificBooks(data interface{}) ([]interface{}, error) {
 	// 获取所有价格大于 10 的书籍
 	jp, err := jsonpath.Compile("$.store.book[?(@.price > 10)]")
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := jp.Execute(data)
+	if err != nil {
+		return nil, err
+	}
+
+	books, ok := result.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("结果类型不匹配")
+	}
+
+	return books, nil
+}
+
+// 使用复杂过滤条件的查询
+func getComplexFilteredBooks(data interface{}) ([]interface{}, error) {
+	// 获取所有价格大于 10 且类别为 fiction 的书籍
+	jp, err := jsonpath.Compile("$.store.book[?(@.price > 10 && @.category == 'fiction')]")
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := jp.Execute(data)
+	if err != nil {
+		return nil, err
+	}
+
+	books, ok := result.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("结果类型不匹配")
+	}
+
+	return books, nil
+}
+
+// 使用否定过滤条件的查询
+func getNonReferenceBooks(data interface{}) ([]interface{}, error) {
+	// 获取所有非参考类的书籍
+	jp, err := jsonpath.Compile("$.store.book[?!(@.category == 'reference')]")
 	if err != nil {
 		return nil, err
 	}
