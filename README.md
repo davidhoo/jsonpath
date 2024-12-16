@@ -114,14 +114,8 @@ jp -f data.json -c
 ```go
 import "github.com/davidhoo/jsonpath"
 
-// Compile JSONPath expression
-jp, err := jsonpath.Compile("$.store.book[*].author")
-if err != nil {
-    log.Fatal(err)
-}
-
-// Execute query
-result, err := jp.Execute(data)
+// Query JSON data
+result, err := jsonpath.Query(data, "$.store.book[*].author")
 if err != nil {
     log.Fatal(err)
 }
@@ -172,13 +166,8 @@ func main() {
         log.Fatal(err)
     }
 
-    // Compile and execute JSONPath
-    jp, err := jsonpath.Compile("$.store.book[?(@.price < 10)].title")
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    result, err := jp.Execute(v)
+    // Execute JSONPath query
+    result, err := jsonpath.Query(v, "$.store.book[?(@.price < 10)].title")
     if err != nil {
         log.Fatal(err)
     }
