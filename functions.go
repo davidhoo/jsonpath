@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
 	"sort"
+	"strings"
 )
 
 // Function represents a JSONPath function
@@ -90,7 +92,7 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("values() requires exactly 1 argument")
 			}
 
-			// 确保参数是��象
+			// 确保参数是对象
 			obj, ok := args[0].(map[string]interface{})
 			if !ok {
 				return nil, fmt.Errorf("values() argument must be an object")
@@ -314,7 +316,7 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("sum() cannot be applied to an empty array")
 			}
 
-			// 计算所有有效数值的总和
+			// 计算所有有效数值��总和
 			var sum float64
 			count := 0
 
@@ -344,6 +346,39 @@ var globalFunctions = map[string]Function{
 			}
 
 			return sum, nil
+		},
+	},
+	"match": &builtinFunction{
+		name: "match",
+		callback: func(args []interface{}) (interface{}, error) {
+			// 验证参数数量
+			if len(args) != 2 {
+				return nil, fmt.Errorf("match() requires exactly 2 arguments: string and pattern")
+			}
+
+			// 验证第一个参数(要匹配的字符串)
+			str, ok := args[0].(string)
+			if !ok {
+				return false, nil // 如果不是字符串,返回false而不是错误
+			}
+
+			// 验证第二个参数(正则表达式模式)
+			pattern, ok := args[1].(string)
+			if !ok {
+				return nil, fmt.Errorf("match() second argument must be a string pattern")
+			}
+
+			// 处理转义字符
+			pattern = strings.ReplaceAll(pattern, "\\\\", "\\")
+
+			// 编译正则表达式
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return false, nil // 如果正则表达式无效,返回false而不是错误
+			}
+
+			// 执行匹配
+			return re.MatchString(str), nil
 		},
 	},
 }

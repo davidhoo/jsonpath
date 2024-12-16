@@ -811,3 +811,88 @@ func TestLogicalOperators(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchFunction(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "match string with pattern",
+			json:     `{"text": "Hello, World!"}`,
+			path:     `$.text.match("^Hello")`,
+			expected: true,
+		},
+		{
+			name:     "match with case insensitive pattern",
+			json:     `{"text": "Hello, World!"}`,
+			path:     `$.text.match("(?i)world")`,
+			expected: true,
+		},
+		{
+			name:     "no match",
+			json:     `{"text": "Hello, World!"}`,
+			path:     `$.text.match("^World")`,
+			expected: false,
+		},
+		{
+			name:     "match with special characters",
+			json:     `{"isbn": "123-4567890123"}`,
+			path:     `$.isbn.match("^\\d{3}-\\d{10}$")`,
+			expected: true,
+		},
+		{
+			name:     "invalid pattern",
+			json:     `{"text": "Hello"}`,
+			path:     `$.text.match("(invalid")`,
+			expected: false,
+			wantErr:  false,
+		},
+		{
+			name:     "match non-string value",
+			json:     `{"num": 42}`,
+			path:     `$.num.match("\\d+")`,
+			expected: false,
+		},
+		{
+			name:    "match with missing second argument",
+			json:    `{"text": "Hello"}`,
+			path:    `$.text.match()`,
+			wantErr: true,
+		},
+		{
+			name:    "match with non-string pattern",
+			json:    `{"text": "Hello"}`,
+			path:    `$.text.match(123)`,
+			wantErr: true,
+		},
+		{
+			name:     "match in filter expression",
+			json:     `{"items": [{"id": "abc123"}, {"id": "def456"}]}`,
+			path:     `$.items[?@.id.match("^abc")]`,
+			expected: []interface{}{map[string]interface{}{"id": "abc123"}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -357,34 +358,65 @@ func (s *filterSegment) evaluate(data interface{}) ([]interface{}, error) {
 }
 
 // evaluateConditions 评估所有条件
-func (s *filterSegment) evaluateConditions(data map[string]interface{}) (bool, error) {
+func (s *filterSegment) evaluateConditions(item interface{}) (bool, error) {
 	if len(s.conditions) == 0 {
 		return false, nil
 	}
 
-	// 评估第一个条件
-	result, err := s.conditions[0].evaluate(data)
+	// Evaluate first condition
+	result, err := s.evaluateCondition(s.conditions[0], item)
 	if err != nil {
 		return false, err
 	}
 
-	// 评估剩余条件
-	for i := 0; i < len(s.operators); i++ {
-		nextResult, err := s.conditions[i+1].evaluate(data)
+	// Evaluate remaining conditions with operators
+	for i := 1; i < len(s.conditions); i++ {
+		nextResult, err := s.evaluateCondition(s.conditions[i], item)
 		if err != nil {
 			return false, err
 		}
 
-		// 应用逻辑运算符
-		switch s.operators[i] {
+		// Apply logical operator
+		switch s.operators[i-1] {
 		case "&&":
 			result = result && nextResult
 		case "||":
 			result = result || nextResult
+		default:
+			return false, fmt.Errorf("invalid operator: %s", s.operators[i-1])
 		}
 	}
 
 	return result, nil
+}
+
+// evaluateCondition evaluates a single condition against an item
+func (s *filterSegment) evaluateCondition(cond filterCondition, item interface{}) (bool, error) {
+	// Get field value
+	value, err := getFieldValue(item, cond.field)
+	if err != nil {
+		return false, err
+	}
+
+	// Compare values
+	switch cond.operator {
+	case "match":
+		str, ok := value.(string)
+		if !ok {
+			return false, nil
+		}
+		pattern, ok := cond.value.(string)
+		if !ok {
+			return false, nil
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return false, nil
+		}
+		return re.MatchString(str), nil
+	default:
+		return compareValues(value, cond.operator, cond.value)
+	}
 }
 
 // String 返回过滤器段的字符串表示

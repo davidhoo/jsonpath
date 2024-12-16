@@ -2,6 +2,7 @@ package jsonpath
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -276,7 +277,7 @@ func parseFilterSegment(content string) (segment, error) {
 		return nil, fmt.Errorf("invalid filter syntax: %s", content)
 	}
 
-	// 提取过滤器内容
+	// 取过滤器内容
 	var isNegated bool
 	var filterContent string
 	var isCompoundNegation bool
@@ -389,23 +390,48 @@ func parseFilterSegment(content string) (segment, error) {
 	}, nil
 }
 
-// 解析单个过滤条件
-func parseFilterCondition(condStr string) (filterCondition, error) {
-	condStr = strings.TrimSpace(condStr)
+// parseFilterCondition parses a single filter condition
+func parseFilterCondition(content string) (filterCondition, error) {
+	content = strings.TrimSpace(content)
 
 	// 处理括号
-	if strings.HasPrefix(condStr, "(") && strings.HasSuffix(condStr, ")") {
-		condStr = strings.TrimSpace(condStr[1 : len(condStr)-1])
+	if strings.HasPrefix(content, "(") && strings.HasSuffix(content, ")") {
+		content = strings.TrimSpace(content[1 : len(content)-1])
 	}
 
 	// 确保条件以 @ 开头
-	if !strings.HasPrefix(condStr, "@") {
+	if !strings.HasPrefix(content, "@") {
 		// 如果不是以 @ 开头，尝试添加 @
-		if strings.HasPrefix(condStr, ".") {
-			condStr = "@" + condStr
+		if strings.HasPrefix(content, ".") {
+			content = "@" + content
 		} else {
-			return filterCondition{}, fmt.Errorf("filter condition must start with @ or .: %s", condStr)
+			return filterCondition{}, fmt.Errorf("filter condition must start with @ or .: %s", content)
 		}
+	}
+
+	// 检查是否是函数调用
+	if strings.Contains(content, ".match(") {
+		parts := strings.Split(content, ".match(")
+		if len(parts) != 2 || !strings.HasSuffix(parts[1], ")") {
+			return filterCondition{}, fmt.Errorf("invalid match function syntax")
+		}
+
+		field := strings.TrimSpace(parts[0])
+		pattern := strings.TrimSpace(parts[1][:len(parts[1])-1])
+
+		// 验证字段格式
+		if !strings.HasPrefix(field, "@") {
+			return filterCondition{}, fmt.Errorf("filter condition must start with @")
+		}
+
+		// 移除引号
+		pattern = strings.Trim(pattern, "\"'")
+
+		return filterCondition{
+			field:    strings.TrimPrefix(field, "@."),
+			operator: "match",
+			value:    pattern,
+		}, nil
 	}
 
 	// 解析操作符和值
@@ -418,12 +444,12 @@ func parseFilterCondition(condStr string) (filterCondition, error) {
 	opIndex := -1
 	opLen := 0
 	for _, op := range operators {
-		idx := strings.Index(condStr, op)
+		idx := strings.Index(content, op)
 		if idx != -1 {
 			// 确保这是一个独立的操作符，不是字符串值的一部分
 			inQuotes := false
 			inParens := 0
-			for _, ch := range condStr[:idx] {
+			for _, ch := range content[:idx] {
 				if ch == '"' || ch == '\'' {
 					inQuotes = !inQuotes
 				} else if ch == '(' {
@@ -442,11 +468,11 @@ func parseFilterCondition(condStr string) (filterCondition, error) {
 	}
 
 	if opIndex == -1 {
-		return filterCondition{}, fmt.Errorf("invalid filter operator: %s", condStr)
+		return filterCondition{}, fmt.Errorf("invalid filter operator: %s", content)
 	}
 
-	field = strings.TrimSpace(condStr[:opIndex])
-	valueStr = strings.TrimSpace(condStr[opIndex+opLen:])
+	field = strings.TrimSpace(content[:opIndex])
+	valueStr = strings.TrimSpace(content[opIndex+opLen:])
 
 	// 处理字段名（移除 @ 和可能的前导点）
 	field = strings.TrimPrefix(field, "@") // 移除 @
@@ -465,36 +491,85 @@ func parseFilterCondition(condStr string) (filterCondition, error) {
 	}, nil
 }
 
-// 解析过滤器值
-func parseFilterValue(valueStr string) (interface{}, error) {
-	valueStr = strings.TrimSpace(valueStr)
-
-	// 处理 null
-	if valueStr == "null" {
-		return nil, nil
+// compareValues compares two values using the specified operator
+func compareValues(a interface{}, operator string, b interface{}) (bool, error) {
+	// 处理match操作符
+	if operator == "match" {
+		str, ok := a.(string)
+		if !ok {
+			return false, nil
+		}
+		pattern, ok := b.(string)
+		if !ok {
+			return false, nil
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return false, nil
+		}
+		return re.MatchString(str), nil
 	}
 
-	// 处理布尔值
-	if valueStr == "true" {
-		return true, nil
-	}
-	if valueStr == "false" {
-		return false, nil
-	}
-
-	// 处理字符串（带引号）
-	if (strings.HasPrefix(valueStr, "'") && strings.HasSuffix(valueStr, "'")) ||
-		(strings.HasPrefix(valueStr, "\"") && strings.HasSuffix(valueStr, "\"")) {
-		return valueStr[1 : len(valueStr)-1], nil
+	// 处理nil值
+	if a == nil || b == nil {
+		switch operator {
+		case "==":
+			return a == b, nil
+		case "!=":
+			return a != b, nil
+		default:
+			return false, nil
+		}
 	}
 
-	// 尝试解析为数字
-	if num, err := strconv.ParseFloat(valueStr, 64); err == nil {
-		return num, nil
+	// 转换为可比较的类型
+	switch v := a.(type) {
+	case float64:
+		if bNum, ok := b.(float64); ok {
+			switch operator {
+			case "==":
+				return v == bNum, nil
+			case "!=":
+				return v != bNum, nil
+			case "<":
+				return v < bNum, nil
+			case "<=":
+				return v <= bNum, nil
+			case ">":
+				return v > bNum, nil
+			case ">=":
+				return v >= bNum, nil
+			}
+		}
+	case string:
+		if bStr, ok := b.(string); ok {
+			switch operator {
+			case "==":
+				return v == bStr, nil
+			case "!=":
+				return v != bStr, nil
+			case "<":
+				return v < bStr, nil
+			case "<=":
+				return v <= bStr, nil
+			case ">":
+				return v > bStr, nil
+			case ">=":
+				return v >= bStr, nil
+			}
+		}
+	case bool:
+		if bBool, ok := b.(bool); ok {
+			switch operator {
+			case "==":
+				return v == bBool, nil
+			case "!=":
+				return v != bBool, nil
+			}
+		}
 	}
 
-	// 如果不是其他类型，返回错误
-	return nil, fmt.Errorf("invalid value: %s", valueStr)
+	return false, fmt.Errorf("incompatible types for comparison")
 }
 
 // getFieldValue 获取对象中指定字段的值
@@ -722,4 +797,36 @@ func splitLogicalOperators(content string) ([]string, []string, error) {
 	}
 
 	return conditions, operators, nil
+}
+
+// parseFilterValue parses a filter value string into an appropriate type
+func parseFilterValue(valueStr string) (interface{}, error) {
+	valueStr = strings.TrimSpace(valueStr)
+
+	// 处理 null
+	if valueStr == "null" {
+		return nil, nil
+	}
+
+	// 处理布尔值
+	if valueStr == "true" {
+		return true, nil
+	}
+	if valueStr == "false" {
+		return false, nil
+	}
+
+	// 处理字符串（带引号）
+	if (strings.HasPrefix(valueStr, "'") && strings.HasSuffix(valueStr, "'")) ||
+		(strings.HasPrefix(valueStr, "\"") && strings.HasSuffix(valueStr, "\"")) {
+		return valueStr[1 : len(valueStr)-1], nil
+	}
+
+	// 尝试解析为数字
+	if num, err := strconv.ParseFloat(valueStr, 64); err == nil {
+		return num, nil
+	}
+
+	// 如果不是其他类型，返回错误
+	return nil, fmt.Errorf("invalid value: %s", valueStr)
 }
