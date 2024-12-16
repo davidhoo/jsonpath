@@ -104,6 +104,36 @@ func TestFilterQueries(t *testing.T) {
 			expected: []interface{}{map[string]interface{}{"user": map[string]interface{}{"age": float64(30)}}},
 		},
 		{
+			name:     "filter by string equality",
+			json:     `{"items": [{"name": "foo"}, {"name": "bar"}, {"name": "baz"}]}`,
+			path:     `$.items[?@.name=="foo"]`,
+			expected: []interface{}{map[string]interface{}{"name": "foo"}},
+		},
+		{
+			name:     "filter by string comparison",
+			json:     `{"items": [{"name": "foo"}, {"name": "bar"}, {"name": "baz"}]}`,
+			path:     `$.items[?@.name>"bar"]`,
+			expected: []interface{}{map[string]interface{}{"name": "foo"}, map[string]interface{}{"name": "baz"}},
+		},
+		{
+			name:     "filter by boolean value",
+			json:     `{"items": [{"active": true}, {"active": false}, {"active": true}]}`,
+			path:     `$.items[?@.active==true]`,
+			expected: []interface{}{map[string]interface{}{"active": true}, map[string]interface{}{"active": true}},
+		},
+		{
+			name:     "filter by null value",
+			json:     `{"items": [{"value": null}, {"value": 1}, {"value": null}]}`,
+			path:     `$.items[?@.value==null]`,
+			expected: []interface{}{map[string]interface{}{"value": nil}, map[string]interface{}{"value": nil}},
+		},
+		{
+			name:     "filter by quoted string",
+			json:     `{"items": [{"type": "book"}, {"type": "movie"}, {"type": "book"}]}`,
+			path:     `$.items[?@.type=="book"]`,
+			expected: []interface{}{map[string]interface{}{"type": "book"}, map[string]interface{}{"type": "book"}},
+		},
+		{
 			name:    "filter with invalid syntax",
 			json:    `{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}`,
 			path:    `$.items[?id==2]`,

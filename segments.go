@@ -3,6 +3,7 @@ package jsonpath
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -314,7 +315,7 @@ func (s *sliceSegment) String() string {
 type filterSegment struct {
 	field    string
 	operator string
-	value    float64
+	value    interface{}
 }
 
 func (s *filterSegment) evaluate(value interface{}) ([]interface{}, error) {
@@ -325,14 +326,22 @@ func (s *filterSegment) evaluate(value interface{}) ([]interface{}, error) {
 	}
 
 	var result []interface{}
+	var lastErr error
+
 	for _, item := range arr {
 		matches, err := s.evaluateFilter(item)
 		if err != nil {
+			lastErr = err
 			continue
 		}
 		if matches {
 			result = append(result, item)
 		}
+	}
+
+	// 如果没有匹配项且有错误，返回错误
+	if len(result) == 0 && lastErr != nil {
+		return nil, lastErr
 	}
 
 	return result, nil
@@ -352,62 +361,133 @@ func (s *filterSegment) evaluateFilter(item interface{}) (bool, error) {
 		}
 	}
 
-	// 转换为数字进行比较
-	numValue, ok := fieldValue.(float64)
-	if !ok {
-		return false, fmt.Errorf("field value is not a number")
+	// 处理 null 值比较
+	if fieldValue == nil {
+		switch s.operator {
+		case "==":
+			return s.value == nil, nil
+		case "!=":
+			return s.value != nil, nil
+		default:
+			return false, nil
+		}
 	}
 
-	// 执行比较
-	switch s.operator {
-	case "==":
-		return numValue == s.value, nil
-	case "!=":
-		return numValue != s.value, nil
-	case "<":
-		return numValue < s.value, nil
-	case "<=":
-		return numValue <= s.value, nil
-	case ">":
-		return numValue > s.value, nil
-	case ">=":
-		return numValue >= s.value, nil
+	// 根据值的类型进行比较
+	switch v := fieldValue.(type) {
+	case float64:
+		return s.compareNumber(v)
+	case int:
+		return s.compareNumber(float64(v))
+	case string:
+		return s.compareString(v)
+	case bool:
+		return s.compareBoolean(v)
 	default:
-		return false, fmt.Errorf("unsupported operator: %s", s.operator)
+		return s.compareOther(fieldValue)
 	}
 }
 
-// getFieldValue 获取对象中指定字段的值
-func getFieldValue(obj interface{}, field string) (interface{}, error) {
-	// 移除开头的点
-	if strings.HasPrefix(field, ".") {
-		field = field[1:]
+func (s *filterSegment) compareNumber(value float64) (bool, error) {
+	// 尝试将比较值转换为数字
+	var compareValue float64
+	switch v := s.value.(type) {
+	case float64:
+		compareValue = v
+	case int:
+		compareValue = float64(v)
+	case string:
+		// 尝试将字符串转换为数字
+		num, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return false, fmt.Errorf("cannot compare number with non-numeric string: %s", v)
+		}
+		compareValue = num
+	default:
+		return false, fmt.Errorf("cannot compare number with %T", s.value)
 	}
 
-	// 分割字段路径
-	parts := strings.Split(field, ".")
-	current := obj
+	switch s.operator {
+	case "==":
+		return value == compareValue, nil
+	case "!=":
+		return value != compareValue, nil
+	case "<":
+		return value < compareValue, nil
+	case "<=":
+		return value <= compareValue, nil
+	case ">":
+		return value > compareValue, nil
+	case ">=":
+		return value >= compareValue, nil
+	default:
+		return false, fmt.Errorf("unsupported operator for numbers: %s", s.operator)
+	}
+}
 
-	for _, part := range parts {
-		// 确保当前值是对象
-		m, ok := current.(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("value is not an object")
-		}
-
-		// 获取下一级字段值
-		var exists bool
-		current, exists = m[part]
-		if !exists {
-			return nil, fmt.Errorf("field %s not found", part)
-		}
+func (s *filterSegment) compareString(value string) (bool, error) {
+	// 确保比较值是字符串
+	compareValue, ok := s.value.(string)
+	if !ok {
+		return false, fmt.Errorf("cannot compare string with non-string")
 	}
 
-	return current, nil
+	switch s.operator {
+	case "==":
+		return value == compareValue, nil
+	case "!=":
+		return value != compareValue, nil
+	case "<":
+		return value < compareValue, nil
+	case "<=":
+		return value <= compareValue, nil
+	case ">":
+		return value > compareValue, nil
+	case ">=":
+		return value >= compareValue, nil
+	default:
+		return false, fmt.Errorf("unsupported operator for strings: %s", s.operator)
+	}
+}
+
+func (s *filterSegment) compareBoolean(value bool) (bool, error) {
+	// 确保比较值是布尔值
+	compareValue, ok := s.value.(bool)
+	if !ok {
+		return false, fmt.Errorf("cannot compare boolean with non-boolean")
+	}
+
+	switch s.operator {
+	case "==":
+		return value == compareValue, nil
+	case "!=":
+		return value != compareValue, nil
+	default:
+		return false, fmt.Errorf("unsupported operator for booleans: %s", s.operator)
+	}
+}
+
+func (s *filterSegment) compareOther(value interface{}) (bool, error) {
+	// 处理其他类型的比较（主要是相等性比较）
+	switch s.operator {
+	case "==":
+		return reflect.DeepEqual(value, s.value), nil
+	case "!=":
+		return !reflect.DeepEqual(value, s.value), nil
+	default:
+		return false, fmt.Errorf("unsupported operator for type %T: %s", value, s.operator)
+	}
 }
 
 func (s *filterSegment) String() string {
-	return fmt.Sprintf("[?(@%s%s%v)]", s.field, s.operator, s.value)
+	valueStr := ""
+	switch v := s.value.(type) {
+	case string:
+		valueStr = fmt.Sprintf("%q", v)
+	default:
+		valueStr = fmt.Sprintf("%v", v)
+	}
+	return fmt.Sprintf("[?(@%s%s%s)]", s.field, s.operator, valueStr)
 }
 
 // 多索引段

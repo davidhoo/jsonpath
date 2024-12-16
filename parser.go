@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // 解析 JSONPath 表达式
@@ -196,12 +197,12 @@ func parseFilterSegment(content string) (segment, error) {
 	operators := []string{"<=", ">=", "==", "!=", "<", ">"}
 	var operator string
 	var field string
-	var value string
+	var valueStr string
 
 	for _, op := range operators {
 		if parts := strings.Split(content, op); len(parts) == 2 {
 			field = strings.TrimSpace(parts[0])
-			value = strings.TrimSpace(parts[1])
+			valueStr = strings.TrimSpace(parts[1])
 			operator = op
 			break
 		}
@@ -212,16 +213,100 @@ func parseFilterSegment(content string) (segment, error) {
 	}
 
 	// 解析值
-	numValue, err := strconv.ParseFloat(value, 64)
+	value, err := parseFilterValue(valueStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid filter value: %s", value)
+		return nil, fmt.Errorf("invalid filter value: %v", err)
 	}
 
 	return &filterSegment{
 		field:    field,
 		operator: operator,
-		value:    numValue,
+		value:    value,
 	}, nil
+}
+
+// 解析过滤器值
+func parseFilterValue(valueStr string) (interface{}, error) {
+	// 处理 null
+	if valueStr == "null" {
+		return nil, nil
+	}
+
+	// 处理布尔值
+	if valueStr == "true" {
+		return true, nil
+	}
+	if valueStr == "false" {
+		return false, nil
+	}
+
+	// ���理字符串（带引号）
+	if strings.HasPrefix(valueStr, "'") && strings.HasSuffix(valueStr, "'") ||
+		strings.HasPrefix(valueStr, "\"") && strings.HasSuffix(valueStr, "\"") {
+		return valueStr[1 : len(valueStr)-1], nil
+	}
+
+	// 尝试解析为数字
+	if num, err := strconv.ParseFloat(valueStr, 64); err == nil {
+		return num, nil
+	}
+
+	// 如果不是其他类型，检查是否是有效的标识符
+	if !isValidIdentifier(valueStr) {
+		return nil, fmt.Errorf("invalid value: %s", valueStr)
+	}
+
+	return valueStr, nil
+}
+
+// 检查是否是有效的标识符
+func isValidIdentifier(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+
+	// 第一个字符必须是字母或下划线
+	if !unicode.IsLetter(rune(s[0])) && s[0] != '_' {
+		return false
+	}
+
+	// 其余字符必须是字母、数字或下划线
+	for i := 1; i < len(s); i++ {
+		if !unicode.IsLetter(rune(s[i])) && !unicode.IsDigit(rune(s[i])) && s[i] != '_' {
+			return false
+		}
+	}
+
+	return true
+}
+
+// getFieldValue 获取对象中指定字段的值
+func getFieldValue(obj interface{}, field string) (interface{}, error) {
+	// 移除开头的点
+	if strings.HasPrefix(field, ".") {
+		field = field[1:]
+	}
+
+	// 分割字段路径
+	parts := strings.Split(field, ".")
+	current := obj
+
+	for _, part := range parts {
+		// 确保当前值是对象
+		m, ok := current.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("value is not an object")
+		}
+
+		// 获取下一级字段值
+		var exists bool
+		current, exists = m[part]
+		if !exists {
+			return nil, fmt.Errorf("field %s not found", part)
+		}
+	}
+
+	return current, nil
 }
 
 // 解析多索引选择
