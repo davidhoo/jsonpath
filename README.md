@@ -252,6 +252,21 @@ func main() {
 
 // Count fiction books
 "$.store.book[*].category.count('fiction')"
+
+// Match book titles with regex pattern
+"$.store.book[?@.title.match('^S.*')]"
+
+// Search for books with titles starting with 'S'
+"$.store.book[*].title.search('^S.*')"
+
+// Chain multiple functions
+"$.store.book[?@.price > 10].title.length()"
+
+// Complex function chaining
+"$.store.book[?@.price > $.store.book[*].price.avg()].title"
+
+// Combine search and filter
+"$.store.book[?@.title.match('^S.*') && @.price < 10].author"
 ```
 
 ### Result Handling

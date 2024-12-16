@@ -76,7 +76,7 @@
 
 ## 安装方式
 
-### Homebrew 安装（推荐）
+### Homebrew 安装推荐）
 
 ```bash
 # 添加 tap
@@ -145,7 +145,7 @@ if err != nil {
     log.Fatal(err)
 }
 
-// 处理���果
+// 处理结果
 authors, ok := result.([]interface{})
 if !ok {
     log.Fatal("unexpected result type")
@@ -255,6 +255,21 @@ func main() {
 
 // 统计小说类书籍数量
 "$.store.book[*].category.count('fiction')"
+
+// 使用正则表达式匹配书名
+"$.store.book[?@.title.match('^S.*')]"
+
+// 搜索以 S 开头的书名
+"$.store.book[*].title.search('^S.*')"
+
+// 函数链式调用
+"$.store.book[?@.price > 10].title.length()"
+
+// 复杂的��数链式调用
+"$.store.book[?@.price > $.store.book[*].price.avg()].title"
+
+// 组合搜索和过滤条件
+"$.store.book[?@.title.match('^S.*') && @.price < 10].author"
 ```
 
 ### 结果处理方法
@@ -286,11 +301,21 @@ if obj, ok := result.(map[string]interface{}); ok {
    - 支持所有标准操作符
    - 标准兼容的语法解析
    - 标准的结果格式化
+
 2. 过滤器支持
    - 比较操作符：`<`、`>`、`<=`、`>=`、`==`、`!=`
    - 逻辑运算符：`&&`、`||`、`!`
    - 支持复杂的过滤条件
-3. 错误处理
+   - 支持数值和字符串比较
+   - 使用 De Morgan 定律处理否定表达式
+   - 支持带括号的嵌套条件
+
+3. 结果处理
+   - 数组操作返回数组结果
+   - 单值访问返回原始类型
+   - 类型安全的结果处理
+
+4. 错误处理
    - 详细的错误信息
    - 语法错误提示
    - 运行时错误处理
