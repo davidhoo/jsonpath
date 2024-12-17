@@ -170,18 +170,18 @@ func parseBracketSegment(content string) (segment, error) {
 // 标准化过滤器表达式
 func normalizeFilterExpression(expr string) string {
 	expr = strings.TrimSpace(expr)
-	// 移除最外层括号
+	// 移除括号
 	if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
 		expr = strings.TrimSpace(expr[1 : len(expr)-1])
 	}
 	return expr
 }
 
-// 应用 De Morgan 定律转换��达式
+// 应用 De Morgan 定律转换表达式
 func applyDeMorgan(expr string) (string, error) {
 	// 处理空表达式
 	if expr == "" {
-		return "", fmt.Errorf("empty expression")
+		return "", NewError(ErrInvalidFilter, "empty expression", expr)
 	}
 
 	// 如果表达式被括号包围，先移除括号
@@ -213,7 +213,7 @@ func applyDeMorgan(expr string) (string, error) {
 			if strings.HasPrefix(cond, ".") {
 				cond = "@" + cond
 			} else {
-				return "", fmt.Errorf("invalid condition: %s", cond)
+				return "", NewError(ErrInvalidFilter, fmt.Sprintf("invalid condition: %s", cond), expr)
 			}
 		}
 
@@ -274,7 +274,7 @@ func applyDeMorgan(expr string) (string, error) {
 func parseFilterSegment(content string) (segment, error) {
 	// 检查语法
 	if !strings.HasPrefix(content, "@") && !strings.HasPrefix(content, "(@") && !strings.HasPrefix(content, "!") && !strings.HasPrefix(content, "(!") {
-		return nil, fmt.Errorf("invalid filter syntax: %s", content)
+		return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
 	}
 
 	// 取过滤器内容
@@ -285,7 +285,7 @@ func parseFilterSegment(content string) (segment, error) {
 	switch {
 	case strings.HasPrefix(content, "(!"):
 		if !strings.HasSuffix(content, ")") {
-			return nil, fmt.Errorf("invalid filter syntax: missing closing parenthesis")
+			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
 		}
 		isNegated = true
 		isCompoundNegation = true
@@ -295,7 +295,7 @@ func parseFilterSegment(content string) (segment, error) {
 		filterContent = content[1:]
 	case strings.HasPrefix(content, "(@"):
 		if !strings.HasSuffix(content, ")") {
-			return nil, fmt.Errorf("invalid filter syntax: missing closing parenthesis")
+			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
 		}
 		filterContent = content[2 : len(content)-1]
 	case strings.HasPrefix(content, "@"):
@@ -305,7 +305,7 @@ func parseFilterSegment(content string) (segment, error) {
 		filterContent = content[1:]
 		if strings.HasPrefix(filterContent, "(") {
 			if !strings.HasSuffix(filterContent, ")") {
-				return nil, fmt.Errorf("invalid filter syntax: missing closing parenthesis")
+				return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
 			}
 			isCompoundNegation = true
 			filterContent = filterContent[1 : len(filterContent)-1]
@@ -319,7 +319,7 @@ func parseFilterSegment(content string) (segment, error) {
 		var err error
 		filterContent, err = applyDeMorgan(filterContent)
 		if err != nil {
-			return nil, fmt.Errorf("error applying De Morgan's laws: %v", err)
+			return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error applying De Morgan's laws: %v", err), content)
 		}
 		isNegated = false // 已经处理过否定
 	}
@@ -330,7 +330,7 @@ func parseFilterSegment(content string) (segment, error) {
 	// 分割逻辑运算符
 	conditions, operators, err := splitLogicalOperators(filterContent)
 	if err != nil {
-		return nil, err
+		return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error splitting logical operators: %v", err), content)
 	}
 
 	// 解析每个条件
@@ -342,7 +342,7 @@ func parseFilterSegment(content string) (segment, error) {
 			innerContent := strings.TrimSpace(condStr[1 : len(condStr)-1])
 			innerConditions, innerOperators, err := splitLogicalOperators(innerContent)
 			if err != nil {
-				return nil, err
+				return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error parsing inner conditions: %v", err), content)
 			}
 
 			// 解析内部条件
@@ -390,22 +390,14 @@ func parseFilterSegment(content string) (segment, error) {
 	}, nil
 }
 
-// parseFilterCondition parses a single filter condition
+// 解析过滤器条件
 func parseFilterCondition(content string) (filterCondition, error) {
-	content = strings.TrimSpace(content)
-
-	// 处理括号
-	if strings.HasPrefix(content, "(") && strings.HasSuffix(content, ")") {
-		content = strings.TrimSpace(content[1 : len(content)-1])
-	}
-
 	// 确保条件以 @ 开头
 	if !strings.HasPrefix(content, "@") {
-		// 如果不是以 @ 开头，尝试添加 @
 		if strings.HasPrefix(content, ".") {
 			content = "@" + content
 		} else {
-			return filterCondition{}, fmt.Errorf("filter condition must start with @ or .: %s", content)
+			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid condition: %s", content), content)
 		}
 	}
 
@@ -413,7 +405,7 @@ func parseFilterCondition(content string) (filterCondition, error) {
 	if strings.Contains(content, ".match(") {
 		parts := strings.Split(content, ".match(")
 		if len(parts) != 2 || !strings.HasSuffix(parts[1], ")") {
-			return filterCondition{}, fmt.Errorf("invalid match function syntax")
+			return filterCondition{}, NewError(ErrInvalidFilter, "invalid match function syntax", content)
 		}
 
 		field := strings.TrimSpace(parts[0])
@@ -421,7 +413,7 @@ func parseFilterCondition(content string) (filterCondition, error) {
 
 		// 验证字段格式
 		if !strings.HasPrefix(field, "@") {
-			return filterCondition{}, fmt.Errorf("filter condition must start with @")
+			return filterCondition{}, NewError(ErrInvalidFilter, "filter condition must start with @", content)
 		}
 
 		// 移除引号
@@ -434,66 +426,110 @@ func parseFilterCondition(content string) (filterCondition, error) {
 		}, nil
 	}
 
-	// 解析操作符和值
-	operators := []string{"<=", ">=", "==", "!=", "<", ">"}
+	// 查找比较操作符
 	var operator string
-	var field string
-	var valueStr string
+	var operatorIndex int
+	var operatorFound bool
 
-	// 找到第一个有效的操作符
-	opIndex := -1
-	opLen := 0
+	// 按长度排序的操作符列表，确保先匹配较长的操作符
+	operators := []string{"<=", ">=", "==", "!=", "<", ">"}
 	for _, op := range operators {
 		idx := strings.Index(content, op)
 		if idx != -1 {
-			// 确保这是一个独立的操作符，不是���符串值的一部分
+			// 确保这是一个独立的操作符，不是符串值的一部分
 			inQuotes := false
 			inParens := 0
-			for _, ch := range content[:idx] {
-				if ch == '"' || ch == '\'' {
+			isValid := true
+			for i := 0; i < idx; i++ {
+				switch content[i] {
+				case '"':
 					inQuotes = !inQuotes
-				} else if ch == '(' {
+				case '(':
 					inParens++
-				} else if ch == ')' {
+				case ')':
 					inParens--
 				}
 			}
-			if !inQuotes && inParens == 0 {
-				opIndex = idx
-				opLen = len(op)
+			if inQuotes || inParens > 0 {
+				isValid = false
+			}
+			if isValid {
 				operator = op
+				operatorIndex = idx
+				operatorFound = true
 				break
 			}
 		}
 	}
 
-	if opIndex == -1 {
-		return filterCondition{}, fmt.Errorf("invalid filter operator: %s", content)
+	if !operatorFound {
+		return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("no valid operator found in condition: %s", content), content)
 	}
 
-	field = strings.TrimSpace(content[:opIndex])
-	valueStr = strings.TrimSpace(content[opIndex+opLen:])
-
-	// 处理字段名（移除 @ 和可能的前导点）
-	field = strings.TrimPrefix(field, "@") // 移除 @
-	field = strings.TrimPrefix(field, ".") // 移除前导点
+	// 分割路径和值
+	field := strings.TrimSpace(content[:operatorIndex])
+	value := strings.TrimSpace(content[operatorIndex+len(operator):])
 
 	// 解析值
-	value, err := parseFilterValue(valueStr)
+	parsedValue, err := parseFilterValue(value)
 	if err != nil {
-		return filterCondition{}, fmt.Errorf("invalid filter value: %v", err)
+		return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid value: %s", value), content)
 	}
 
 	return filterCondition{
-		field:    field,
+		field:    strings.TrimPrefix(field, "@."),
 		operator: operator,
-		value:    value,
+		value:    parsedValue,
 	}, nil
 }
 
 // compareValues compares two values using the specified operator
 func compareValues(a interface{}, operator string, b interface{}) (bool, error) {
-	// 处理match操作符
+	// 处理 nil 值
+	if a == nil || b == nil {
+		switch operator {
+		case "==":
+			return a == b, nil
+		case "!=":
+			return a != b, nil
+		default:
+			return false, nil
+		}
+	}
+
+	// 处理数字类型
+	switch v := a.(type) {
+	case float64:
+		switch bv := b.(type) {
+		case float64:
+			return compareNumbers(v, operator, bv), nil
+		case int64:
+			return compareNumbers(v, operator, float64(bv)), nil
+		}
+	case int64:
+		switch bv := b.(type) {
+		case float64:
+			return compareNumbers(float64(v), operator, bv), nil
+		case int64:
+			return compareNumbers(float64(v), operator, float64(bv)), nil
+		}
+	}
+
+	// 处理字符串类型
+	if aStr, ok := a.(string); ok {
+		if bStr, ok := b.(string); ok {
+			return compareStrings(aStr, operator, bStr), nil
+		}
+	}
+
+	// 处理布尔类型
+	if aBool, ok := a.(bool); ok {
+		if bBool, ok := b.(bool); ok {
+			return compareBooleans(aBool, operator, bBool), nil
+		}
+	}
+
+	// 处理 match 操作符
 	if operator == "match" {
 		str, ok := a.(string)
 		if !ok {
@@ -510,72 +546,68 @@ func compareValues(a interface{}, operator string, b interface{}) (bool, error) 
 		return re.MatchString(str), nil
 	}
 
-	// 处理nil值
-	if a == nil || b == nil {
-		switch operator {
-		case "==":
-			return a == b, nil
-		case "!=":
-			return a != b, nil
-		default:
-			return false, nil
-		}
-	}
-
-	// 转换为可比较的类型
-	switch v := a.(type) {
-	case float64:
-		if bNum, ok := b.(float64); ok {
-			switch operator {
-			case "==":
-				return v == bNum, nil
-			case "!=":
-				return v != bNum, nil
-			case "<":
-				return v < bNum, nil
-			case "<=":
-				return v <= bNum, nil
-			case ">":
-				return v > bNum, nil
-			case ">=":
-				return v >= bNum, nil
-			}
-		}
-	case string:
-		if bStr, ok := b.(string); ok {
-			switch operator {
-			case "==":
-				return v == bStr, nil
-			case "!=":
-				return v != bStr, nil
-			case "<":
-				return v < bStr, nil
-			case "<=":
-				return v <= bStr, nil
-			case ">":
-				return v > bStr, nil
-			case ">=":
-				return v >= bStr, nil
-			}
-		}
-	case bool:
-		if bBool, ok := b.(bool); ok {
-			switch operator {
-			case "==":
-				return v == bBool, nil
-			case "!=":
-				return v != bBool, nil
-			}
-		}
-	}
-
 	return false, fmt.Errorf("incompatible types for comparison")
+}
+
+// compareNumbers compares two numbers using the specified operator
+func compareNumbers(a float64, operator string, b float64) bool {
+	switch operator {
+	case "==":
+		return a == b
+	case "!=":
+		return a != b
+	case "<":
+		return a < b
+	case "<=":
+		return a <= b
+	case ">":
+		return a > b
+	case ">=":
+		return a >= b
+	}
+	return false
+}
+
+// compareStrings compares two strings using the specified operator
+func compareStrings(a string, operator string, b string) bool {
+	switch operator {
+	case "==":
+		return a == b
+	case "!=":
+		return a != b
+	case "<":
+		return a < b
+	case "<=":
+		return a <= b
+	case ">":
+		return a > b
+	case ">=":
+		return a >= b
+	}
+	return false
+}
+
+// compareBooleans compares two booleans using the specified operator
+func compareBooleans(a bool, operator string, b bool) bool {
+	switch operator {
+	case "==":
+		return a == b
+	case "!=":
+		return a != b
+	}
+	return false
 }
 
 // getFieldValue 获取对象中指定字段的值
 func getFieldValue(obj interface{}, field string) (interface{}, error) {
-	// 移除前导点
+	// 移除 @ 和前导点
+	field = strings.TrimPrefix(field, "@")
 	field = strings.TrimPrefix(field, ".")
+
+	// 如果字段为空，返回对象本身
+	if field == "" {
+		return obj, nil
+	}
 
 	// 分割字段路径
 	parts := strings.Split(field, ".")
@@ -714,86 +746,81 @@ func parseFunctionCall(content string) (segment, error) {
 }
 
 // 分割逻辑运算符
-func splitLogicalOperators(content string) ([]string, []string, error) {
+func splitLogicalOperators(expr string) ([]string, []string, error) {
 	var conditions []string
 	var operators []string
-	var current strings.Builder
-	var inQuotes bool
-	var quoteChar rune
-	var inParens int
-	var lastChar rune
+	var currentCondition strings.Builder
+	inQuotes := false
+	inParens := 0
+	i := 0
 
-	for i := 0; i < len(content); {
-		char := rune(content[i])
+	for i < len(expr) {
+		// 处理引号内的内容
+		if expr[i] == '"' || expr[i] == '\'' {
+			inQuotes = !inQuotes
+			currentCondition.WriteByte(expr[i])
+			i++
+			continue
+		}
 
 		// 处理括号
-		if char == '(' {
+		if expr[i] == '(' {
 			inParens++
-			current.WriteRune(char)
+			currentCondition.WriteByte(expr[i])
 			i++
-			lastChar = char
 			continue
 		}
-		if char == ')' {
+		if expr[i] == ')' {
 			inParens--
-			current.WriteRune(char)
-			i++
-			lastChar = char
-			continue
-		}
-
-		// 处理引号
-		if (char == '"' || char == '\'') && (lastChar != '\\') {
-			if !inQuotes {
-				inQuotes = true
-				quoteChar = char
-			} else if char == quoteChar {
-				inQuotes = false
+			if inParens < 0 {
+				return nil, nil, NewError(ErrInvalidFilter, "unmatched closing parenthesis", expr)
 			}
-			current.WriteRune(char)
+			currentCondition.WriteByte(expr[i])
 			i++
-			lastChar = char
-			continue
-		}
-
-		// 在引号或括号内的内容直接添加
-		if inQuotes || inParens > 0 {
-			current.WriteRune(char)
-			i++
-			lastChar = char
 			continue
 		}
 
 		// 检查逻辑运算符
-		if i+1 < len(content) {
-			op := content[i : i+2]
-			if (op == "&&" || op == "||") && !inQuotes && inParens == 0 {
-				// 添加当前条件
-				if current.Len() > 0 {
-					conditions = append(conditions, strings.TrimSpace(current.String()))
-					current.Reset()
+		if !inQuotes && inParens == 0 {
+			if i+1 < len(expr) {
+				op := expr[i : i+2]
+				if op == "&&" || op == "||" {
+					// 加当前条件
+					cond := strings.TrimSpace(currentCondition.String())
+					if cond == "" {
+						return nil, nil, NewError(ErrInvalidFilter, "empty condition before operator", expr)
+					}
+					conditions = append(conditions, cond)
+					operators = append(operators, op)
+					currentCondition.Reset()
+					i += 2
+					continue
 				}
-				// 添加运算符
-				operators = append(operators, op)
-				i += 2
-				lastChar = rune(op[1])
-				continue
 			}
 		}
 
-		current.WriteRune(char)
+		currentCondition.WriteByte(expr[i])
 		i++
-		lastChar = char
+	}
+
+	// 检查最终状态
+	if inQuotes {
+		return nil, nil, NewError(ErrInvalidFilter, "unclosed quotes", expr)
+	}
+	if inParens != 0 {
+		return nil, nil, NewError(ErrInvalidFilter, "unmatched parentheses", expr)
 	}
 
 	// 添加最后一个条件
-	if current.Len() > 0 {
-		conditions = append(conditions, strings.TrimSpace(current.String()))
+	lastCond := strings.TrimSpace(currentCondition.String())
+	if lastCond == "" {
+		return nil, nil, NewError(ErrInvalidFilter, "empty condition at end", expr)
 	}
+	conditions = append(conditions, lastCond)
 
-	// 验证条件和运算符数量
+	// 验证条件和运算符的数量关系
 	if len(conditions) != len(operators)+1 {
-		return nil, nil, fmt.Errorf("invalid number of conditions and operators")
+		return nil, nil, NewError(ErrInvalidFilter, "invalid number of conditions and operators", expr)
 	}
 
 	return conditions, operators, nil
