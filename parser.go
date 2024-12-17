@@ -16,7 +16,7 @@ func parse(path string) ([]segment, error) {
 
 	// 检查并移除 $ 前缀
 	if !strings.HasPrefix(path, "$") {
-		return nil, fmt.Errorf("path must start with $")
+		return nil, NewError(ErrSyntax, "path must start with $", path)
 	}
 	path = strings.TrimPrefix(path, "$")
 
@@ -75,7 +75,7 @@ func parseRegular(path string) ([]segment, error) {
 		switch {
 		case char == '[':
 			if inBracket {
-				return nil, fmt.Errorf("nested brackets not allowed")
+				return nil, NewError(ErrSyntax, "nested brackets not allowed", path)
 			}
 			if current != "" {
 				seg, err := createDotSegment(current)
@@ -89,7 +89,7 @@ func parseRegular(path string) ([]segment, error) {
 
 		case char == ']':
 			if !inBracket {
-				return nil, fmt.Errorf("unexpected closing bracket")
+				return nil, NewError(ErrSyntax, "unexpected closing bracket", path)
 			}
 			seg, err := parseBracketSegment(bracketContent)
 			if err != nil {
@@ -120,7 +120,7 @@ func parseRegular(path string) ([]segment, error) {
 
 	// 处理最后一个段
 	if inBracket {
-		return nil, fmt.Errorf("unclosed bracket")
+		return nil, NewError(ErrSyntax, "unclosed bracket", path)
 	}
 	if current != "" {
 		seg, err := createDotSegment(current)
@@ -177,7 +177,7 @@ func normalizeFilterExpression(expr string) string {
 	return expr
 }
 
-// 应用 De Morgan 定律转换表达式
+// 应用 De Morgan 定律转换��达式
 func applyDeMorgan(expr string) (string, error) {
 	// 处理空表达式
 	if expr == "" {
@@ -446,7 +446,7 @@ func parseFilterCondition(content string) (filterCondition, error) {
 	for _, op := range operators {
 		idx := strings.Index(content, op)
 		if idx != -1 {
-			// 确保这是一个独立的操作符，不是字符串值的一部分
+			// 确保这是一个独立的操作符，不是���符串值的一部分
 			inQuotes := false
 			inParens := 0
 			for _, ch := range content[:idx] {
