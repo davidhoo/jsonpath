@@ -432,28 +432,6 @@ func (s *filterSegment) String() string {
 	return result.String()
 }
 
-// filterCondition 表示过滤器条件
-type filterCondition struct {
-	field    string
-	operator string
-	value    interface{}
-}
-
-// String 返回过滤器条件的字符串表示
-func (c *filterCondition) String() string {
-	var result strings.Builder
-	result.WriteString("@.")
-	result.WriteString(c.field)
-	result.WriteString(c.operator)
-	switch v := c.value.(type) {
-	case string:
-		result.WriteString("\"" + v + "\"")
-	default:
-		result.WriteString(fmt.Sprintf("%v", v))
-	}
-	return result.String()
-}
-
 // 多索引段
 type multiIndexSegment struct {
 	indices []int
