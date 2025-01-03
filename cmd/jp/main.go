@@ -569,22 +569,33 @@ func FormatJSON(data interface{}, compress bool) string {
 	return strings.TrimSpace(buf.String())
 }
 
-func main() {
+// isInputFromPipe 检查是否有管道输入
+func isInputFromPipe() bool {
+	fileInfo, _ := os.Stdin.Stat()
+	return fileInfo.Mode()&os.ModeCharDevice == 0
+}
+
+// run 执行主要的程序逻辑
+func run() error {
 	var err error
 	cfg.path, cfg.file, err = ParseFlags()
 	if err == errHelp || err == errVersion {
-		os.Exit(0)
+		return nil
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
+	}
+
+	// 如果没有任何参数和文件输入，显示帮助信息
+	if cfg.path == "" && cfg.file == "" && !isInputFromPipe() {
+		printHelp()
+		return nil
 	}
 
 	// 读取输入
 	data, err := readInput(cfg.file)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
 
 	// 如果 JSONPath 表达式被指定，执行查询
@@ -592,8 +603,7 @@ func main() {
 		// 执行 JSONPath 查询
 		result, err := jsonpath.Query(data, cfg.path)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error executing query"), err)
-			os.Exit(1)
+			return fmt.Errorf("%s: %v", errorColor("error executing query"), err)
 		}
 
 		// 如果结果是字符串，直接输出
@@ -603,7 +613,7 @@ func main() {
 			} else {
 				fmt.Println(stringColor(str))
 			}
-			return
+			return nil
 		}
 
 		// 设置缩进
@@ -613,15 +623,13 @@ func main() {
 
 		// 输出结果
 		if err := outputResult(result, &cfg); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return err
 		}
 	} else {
 		// 解析原始 JSON 数据
 		var jsonData interface{}
 		if err := json.Unmarshal([]byte(data), &jsonData); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", errorColor("error parsing JSON"), err)
-			os.Exit(1)
+			return fmt.Errorf("%s: %v", errorColor("error parsing JSON"), err)
 		}
 
 		// 设置缩进
@@ -631,8 +639,16 @@ func main() {
 
 		// 输出结果
 		if err := outputResult(jsonData, &cfg); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return err
 		}
+	}
+
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
