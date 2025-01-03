@@ -518,6 +518,13 @@ func compareValues(a interface{}, operator string, b interface{}) (bool, error) 
 	// 处理字符串类型
 	if aStr, ok := a.(string); ok {
 		if bStr, ok := b.(string); ok {
+			if operator == "match" {
+				re, err := regexp.Compile(bStr)
+				if err != nil {
+					return false, nil
+				}
+				return re.MatchString(aStr), nil
+			}
 			return compareStrings(aStr, operator, bStr), nil
 		}
 	}
@@ -527,23 +534,6 @@ func compareValues(a interface{}, operator string, b interface{}) (bool, error) 
 		if bBool, ok := b.(bool); ok {
 			return compareBooleans(aBool, operator, bBool), nil
 		}
-	}
-
-	// 处理 match 操作符
-	if operator == "match" {
-		str, ok := a.(string)
-		if !ok {
-			return false, nil
-		}
-		pattern, ok := b.(string)
-		if !ok {
-			return false, nil
-		}
-		re, err := regexp.Compile(pattern)
-		if err != nil {
-			return false, nil
-		}
-		return re.MatchString(str), nil
 	}
 
 	return false, fmt.Errorf("incompatible types for comparison")
