@@ -47,6 +47,20 @@ func TestParseFlags(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name:     "with -h flag",
+			args:     []string{"-h"},
+			wantPath: "",
+			wantFile: "",
+			wantErr:  true,
+		},
+		{
+			name:     "with --help flag",
+			args:     []string{"--help"},
+			wantPath: "",
+			wantFile: "",
+			wantErr:  true,
+		},
+		{
 			name:     "invalid flag",
 			args:     []string{"-x"},
 			wantPath: "",
