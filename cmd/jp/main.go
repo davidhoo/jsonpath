@@ -437,7 +437,9 @@ func colorizeJSON(jsonStr string) string {
 	var result strings.Builder
 	inString := false
 	inKey := false
+	inArray := false
 	var prev rune
+	var stringBuffer strings.Builder
 
 	for i := 0; i < len(jsonStr); {
 		r, size := utf8.DecodeRuneInString(jsonStr[i:])
@@ -454,18 +456,21 @@ func colorizeJSON(jsonStr string) string {
 					} else {
 						result.WriteString(valueQuoteColor(`"`))
 					}
+					stringBuffer.Reset()
 				} else {
 					// 结束一个字符串
 					inString = false
 					if inKey {
+						result.WriteString(keyColor(stringBuffer.String()))
 						result.WriteString(keyQuoteColor(`"`))
 						inKey = false
 					} else {
+						result.WriteString(stringColor(stringBuffer.String()))
 						result.WriteString(valueQuoteColor(`"`))
 					}
 				}
 			} else {
-				result.WriteRune(r)
+				stringBuffer.WriteRune(r)
 			}
 
 		case '{', '}':
@@ -473,24 +478,33 @@ func colorizeJSON(jsonStr string) string {
 				result.WriteString(braceColor(string(r)))
 				if r == '{' {
 					inKey = true
+					inArray = false
 				}
 			} else {
-				result.WriteRune(r)
+				stringBuffer.WriteRune(r)
 			}
 
 		case '[', ']':
 			if !inString {
 				result.WriteString(bracketColor(string(r)))
+				if r == '[' {
+					inKey = false
+					inArray = true
+				} else {
+					inArray = false
+				}
 			} else {
-				result.WriteRune(r)
+				stringBuffer.WriteRune(r)
 			}
 
 		case ',':
 			if !inString {
 				result.WriteString(commaColor(string(r)))
-				inKey = true
+				if !inArray {
+					inKey = true
+				}
 			} else {
-				result.WriteRune(r)
+				stringBuffer.WriteRune(r)
 			}
 
 		case ':':
@@ -498,7 +512,7 @@ func colorizeJSON(jsonStr string) string {
 				result.WriteString(colonColor(string(r)))
 				inKey = false
 			} else {
-				result.WriteRune(r)
+				stringBuffer.WriteRune(r)
 			}
 
 		default:
@@ -539,11 +553,7 @@ func colorizeJSON(jsonStr string) string {
 					}
 				}
 			} else {
-				if inKey {
-					result.WriteString(keyColor(string(r)))
-				} else {
-					result.WriteString(stringColor(string(r)))
-				}
+				stringBuffer.WriteRune(r)
 			}
 		}
 
