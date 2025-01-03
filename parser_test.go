@@ -318,52 +318,153 @@ func TestParseFunctionCall(t *testing.T) {
 	tests := []struct {
 		name        string
 		content     string
-		wantFunc    *functionSegment
+		wantName    string
+		wantArgs    []interface{}
 		wantErr     bool
 		errContains string
 	}{
+		// 无参数函数
 		{
 			name:     "no args",
 			content:  "length()",
-			wantFunc: &functionSegment{name: "length", args: []interface{}{}},
+			wantName: "length",
+			wantArgs: []interface{}{},
 		},
 		{
+			name:     "empty args",
+			content:  "count(  )",
+			wantName: "count",
+			wantArgs: []interface{}{},
+		},
+
+		// 数字参数
+		{
 			name:     "single number arg",
-			content:  "min(1)",
-			wantFunc: &functionSegment{name: "min", args: []interface{}{float64(1)}},
+			content:  "min(42)",
+			wantName: "min",
+			wantArgs: []interface{}{float64(42)},
 		},
 		{
 			name:     "multiple number args",
 			content:  "sum(1, 2, 3)",
-			wantFunc: &functionSegment{name: "sum", args: []interface{}{float64(1), float64(2), float64(3)}},
+			wantName: "sum",
+			wantArgs: []interface{}{float64(1), float64(2), float64(3)},
 		},
 		{
-			name:     "string arg",
+			name:     "decimal number args",
+			content:  "avg(1.5, 2.7, 3.9)",
+			wantName: "avg",
+			wantArgs: []interface{}{float64(1.5), float64(2.7), float64(3.9)},
+		},
+		{
+			name:     "negative number args",
+			content:  "range(-1, -2, -3)",
+			wantName: "range",
+			wantArgs: []interface{}{float64(-1), float64(-2), float64(-3)},
+		},
+
+		// 字符串参数
+		{
+			name:     "single string arg",
 			content:  "match('pattern')",
-			wantFunc: &functionSegment{name: "match", args: []interface{}{"pattern"}},
+			wantName: "match",
+			wantArgs: []interface{}{"pattern"},
 		},
 		{
-			name:     "mixed args",
+			name:     "multiple string args",
+			content:  "concat('hello', 'world')",
+			wantName: "concat",
+			wantArgs: []interface{}{"hello", "world"},
+		},
+		{
+			name:     "string args with spaces",
+			content:  "format('hello world', 'goodbye world')",
+			wantName: "format",
+			wantArgs: []interface{}{"hello world", "goodbye world"},
+		},
+		{
+			name:     "empty string args",
+			content:  "join('', '')",
+			wantName: "join",
+			wantArgs: []interface{}{"", ""},
+		},
+
+		// 混合参数
+		{
+			name:     "mixed string and number args",
 			content:  "format('value', 42)",
-			wantFunc: &functionSegment{name: "format", args: []interface{}{"value", float64(42)}},
+			wantName: "format",
+			wantArgs: []interface{}{"value", float64(42)},
 		},
 		{
-			name:        "missing parenthesis",
+			name:     "complex mixed args",
+			content:  "transform('data', 1.5, 'options', -3)",
+			wantName: "transform",
+			wantArgs: []interface{}{"data", float64(1.5), "options", float64(-3)},
+		},
+
+		// 错误情况
+		{
+			name:        "missing opening parenthesis",
 			content:     "length",
 			wantErr:     true,
 			errContains: "missing opening parenthesis",
 		},
 		{
-			name:        "invalid arg type",
-			content:     "sum(1, invalid, 3)",
+			name:        "missing closing parenthesis",
+			content:     "length(",
+			wantErr:     true,
+			errContains: "missing closing parenthesis",
+		},
+		{
+			name:        "invalid argument type",
+			content:     "func(invalid)",
 			wantErr:     true,
 			errContains: "unsupported argument type",
 		},
 		{
-			name:        "unclosed string",
-			content:     "match('pattern)",
+			name:        "unclosed string argument",
+			content:     "func('unclosed)",
 			wantErr:     true,
 			errContains: "unsupported argument type",
+		},
+		{
+			name:        "unmatched quotes",
+			content:     "func('test\", 42)",
+			wantErr:     true,
+			errContains: "unsupported argument type",
+		},
+
+		// 边界情况
+		{
+			name:     "function name with underscore",
+			content:  "my_func()",
+			wantName: "my_func",
+			wantArgs: []interface{}{},
+		},
+		{
+			name:     "function name with numbers",
+			content:  "func123()",
+			wantName: "func123",
+			wantArgs: []interface{}{},
+		},
+		{
+			name:     "very large number",
+			content:  "big(9999999999)",
+			wantName: "big",
+			wantArgs: []interface{}{float64(9999999999)},
+		},
+		{
+			name:     "very small number",
+			content:  "small(-9999999999)",
+			wantName: "small",
+			wantArgs: []interface{}{float64(-9999999999)},
+		},
+		{
+			name:     "string with escaped quotes",
+			content:  "escape('I''m here')",
+			wantName: "escape",
+			wantArgs: []interface{}{"I'm here"},
 		},
 	}
 
@@ -381,17 +482,18 @@ func TestParseFunctionCall(t *testing.T) {
 				return
 			}
 
-			segment, ok := got.(*functionSegment)
+			fs, ok := got.(*functionSegment)
 			if !ok {
-				t.Fatal("parseFunctionCall() returned wrong type")
+				t.Errorf("parseFunctionCall() returned %T, want *functionSegment", got)
+				return
 			}
 
-			if segment.name != tt.wantFunc.name {
-				t.Errorf("parseFunctionCall() name = %v, want %v", segment.name, tt.wantFunc.name)
+			if fs.name != tt.wantName {
+				t.Errorf("parseFunctionCall() name = %v, want %v", fs.name, tt.wantName)
 			}
 
-			if !reflect.DeepEqual(segment.args, tt.wantFunc.args) {
-				t.Errorf("parseFunctionCall() args = %v, want %v", segment.args, tt.wantFunc.args)
+			if !reflect.DeepEqual(fs.args, tt.wantArgs) {
+				t.Errorf("parseFunctionCall() args = %v, want %v", fs.args, tt.wantArgs)
 			}
 		})
 	}
@@ -448,6 +550,7 @@ func TestParseIndexOrName(t *testing.T) {
 		wantErr     bool
 		errContains string
 	}{
+		// 数字索引
 		{
 			name:      "positive index",
 			content:   "42",
@@ -467,28 +570,24 @@ func TestParseIndexOrName(t *testing.T) {
 			wantValue: 0,
 		},
 		{
+			name:      "max int",
+			content:   "9223372036854775807",
+			wantType:  "indexSegment",
+			wantValue: 9223372036854775807,
+		},
+		{
+			name:      "min int",
+			content:   "-9223372036854775808",
+			wantType:  "indexSegment",
+			wantValue: -9223372036854775808,
+		},
+
+		// 字符串字面量
+		{
 			name:      "quoted string",
 			content:   "'hello'",
 			wantType:  "nameSegment",
 			wantValue: "hello",
-		},
-		{
-			name:      "unquoted string",
-			content:   "hello",
-			wantType:  "nameSegment",
-			wantValue: "hello",
-		},
-		{
-			name:      "special characters in quoted string",
-			content:   "'hello.world'",
-			wantType:  "nameSegment",
-			wantValue: "hello.world",
-		},
-		{
-			name:      "special characters in unquoted string",
-			content:   "hello_world",
-			wantType:  "nameSegment",
-			wantValue: "hello_world",
 		},
 		{
 			name:      "empty quoted string",
@@ -497,22 +596,112 @@ func TestParseIndexOrName(t *testing.T) {
 			wantValue: "",
 		},
 		{
-			name:      "function call",
+			name:      "quoted string with spaces",
+			content:   "'hello world'",
+			wantType:  "nameSegment",
+			wantValue: "hello world",
+		},
+		{
+			name:      "quoted string with special characters",
+			content:   "'hello.world'",
+			wantType:  "nameSegment",
+			wantValue: "hello.world",
+		},
+		{
+			name:      "quoted string with numbers",
+			content:   "'123'",
+			wantType:  "nameSegment",
+			wantValue: "123",
+		},
+		{
+			name:      "quoted string with unicode",
+			content:   "'你好'",
+			wantType:  "nameSegment",
+			wantValue: "你好",
+		},
+
+		// 普通名称
+		{
+			name:      "unquoted string",
+			content:   "hello",
+			wantType:  "nameSegment",
+			wantValue: "hello",
+		},
+		{
+			name:      "unquoted string with underscore",
+			content:   "hello_world",
+			wantType:  "nameSegment",
+			wantValue: "hello_world",
+		},
+		{
+			name:      "unquoted string with numbers",
+			content:   "hello123",
+			wantType:  "nameSegment",
+			wantValue: "hello123",
+		},
+		{
+			name:      "unquoted string starting with underscore",
+			content:   "_hello",
+			wantType:  "nameSegment",
+			wantValue: "_hello",
+		},
+
+		// 函数调用
+		{
+			name:      "function call without args",
 			content:   "length()",
 			wantType:  "functionSegment",
 			wantValue: "length",
 		},
 		{
-			name:      "function call with arguments",
-			content:   "min(1,2,3)",
+			name:      "function call with number arg",
+			content:   "min(1)",
 			wantType:  "functionSegment",
 			wantValue: "min",
 		},
 		{
-			name:      "function call with string argument",
+			name:      "function call with string arg",
 			content:   "match('pattern')",
 			wantType:  "functionSegment",
 			wantValue: "match",
+		},
+		{
+			name:      "function call with multiple args",
+			content:   "format('value', 42)",
+			wantType:  "functionSegment",
+			wantValue: "format",
+		},
+
+		// 边界情况和错误
+		{
+			name:      "single quote",
+			content:   "'",
+			wantType:  "nameSegment",
+			wantValue: "'",
+		},
+		{
+			name:      "unclosed quote",
+			content:   "'hello",
+			wantType:  "nameSegment",
+			wantValue: "'hello",
+		},
+		{
+			name:      "empty string",
+			content:   "",
+			wantType:  "nameSegment",
+			wantValue: "",
+		},
+		{
+			name:      "whitespace only",
+			content:   "   ",
+			wantType:  "nameSegment",
+			wantValue: "   ",
+		},
+		{
+			name:      "special characters",
+			content:   "@#$%",
+			wantType:  "nameSegment",
+			wantValue: "@#$%",
 		},
 	}
 
@@ -553,6 +742,30 @@ func TestParseIndexOrName(t *testing.T) {
 				}
 			default:
 				t.Errorf("parseIndexOrName() returned unexpected type %T", got)
+			}
+		})
+	}
+}
+
+func TestParseFilterValue(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    interface{}
+		wantErr bool
+	}{
+		// 测试用例
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseFilterValue(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseFilterValue() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseFilterValue() = %v, want %v", got, tt.want)
 			}
 		})
 	}

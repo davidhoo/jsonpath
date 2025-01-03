@@ -483,60 +483,132 @@ func parseFilterCondition(content string) (filterCondition, error) {
 	}, nil
 }
 
-// compareValues compares two values using the specified operator
-func compareValues(a interface{}, operator string, b interface{}) (bool, error) {
+// compareValues compares two values based on the operator
+func compareValues(value1 interface{}, operator string, value2 interface{}) (bool, error) {
+	// 检查操作符是否有效
+	validOperators := map[string]bool{
+		"==":    true,
+		"!=":    true,
+		">":     true,
+		"<":     true,
+		">=":    true,
+		"<=":    true,
+		"match": true,
+	}
+	if !validOperators[operator] {
+		return false, fmt.Errorf("invalid operator: %s", operator)
+	}
+
 	// 处理 nil 值
-	if a == nil || b == nil {
+	if value1 == nil || value2 == nil {
 		switch operator {
 		case "==":
-			return a == b, nil
+			return value1 == value2, nil
 		case "!=":
-			return a != b, nil
+			return value1 != value2, nil
 		default:
-			return false, nil
+			return false, fmt.Errorf("invalid operator for nil values: %s", operator)
 		}
 	}
 
 	// 处理数字类型
-	switch v := a.(type) {
-	case float64:
-		switch bv := b.(type) {
-		case float64:
-			return compareNumbers(v, operator, bv), nil
-		case int64:
-			return compareNumbers(v, operator, float64(bv)), nil
-		}
-	case int64:
-		switch bv := b.(type) {
-		case float64:
-			return compareNumbers(float64(v), operator, bv), nil
-		case int64:
-			return compareNumbers(float64(v), operator, float64(bv)), nil
+	num1, num2, isNum := normalizeNumbers(value1, value2)
+	if isNum {
+		switch operator {
+		case "==":
+			return num1 == num2, nil
+		case "!=":
+			return num1 != num2, nil
+		case ">":
+			return num1 > num2, nil
+		case "<":
+			return num1 < num2, nil
+		case ">=":
+			return num1 >= num2, nil
+		case "<=":
+			return num1 <= num2, nil
+		default:
+			return false, fmt.Errorf("invalid operator for numbers: %s", operator)
 		}
 	}
 
 	// 处理字符串类型
-	if aStr, ok := a.(string); ok {
-		if bStr, ok := b.(string); ok {
-			if operator == "match" {
-				re, err := regexp.Compile(bStr)
+	if str1, ok := value1.(string); ok {
+		if str2, ok := value2.(string); ok {
+			switch operator {
+			case "==":
+				return str1 == str2, nil
+			case "!=":
+				return str1 != str2, nil
+			case ">":
+				return str1 > str2, nil
+			case "<":
+				return str1 < str2, nil
+			case ">=":
+				return str1 >= str2, nil
+			case "<=":
+				return str1 <= str2, nil
+			case "match":
+				re, err := regexp.Compile(str2)
 				if err != nil {
-					return false, nil
+					return false, fmt.Errorf("invalid regex pattern: %s", str2)
 				}
-				return re.MatchString(aStr), nil
+				return re.MatchString(str1), nil
+			default:
+				return false, fmt.Errorf("invalid operator for strings: %s", operator)
 			}
-			return compareStrings(aStr, operator, bStr), nil
 		}
+		if operator == "match" {
+			return false, fmt.Errorf("pattern must be a string")
+		}
+	}
+	if operator == "match" {
+		return false, fmt.Errorf("value must be a string")
 	}
 
 	// 处理布尔类型
-	if aBool, ok := a.(bool); ok {
-		if bBool, ok := b.(bool); ok {
-			return compareBooleans(aBool, operator, bBool), nil
+	if bool1, ok := value1.(bool); ok {
+		if bool2, ok := value2.(bool); ok {
+			switch operator {
+			case "==":
+				return bool1 == bool2, nil
+			case "!=":
+				return bool1 != bool2, nil
+			default:
+				return false, fmt.Errorf("invalid operator for booleans: %s", operator)
+			}
 		}
 	}
 
 	return false, fmt.Errorf("incompatible types for comparison")
+}
+
+// normalizeNumbers 将两个值转换为 float64 类型
+func normalizeNumbers(value1, value2 interface{}) (float64, float64, bool) {
+	var num1, num2 float64
+	var ok1, ok2 bool
+
+	// 尝试将 value1 转换为 float64
+	switch v := value1.(type) {
+	case float64:
+		num1, ok1 = v, true
+	case int64:
+		num1, ok1 = float64(v), true
+	case int:
+		num1, ok1 = float64(v), true
+	}
+
+	// 尝试将 value2 转换为 float64
+	switch v := value2.(type) {
+	case float64:
+		num2, ok2 = v, true
+	case int64:
+		num2, ok2 = float64(v), true
+	case int:
+		num2, ok2 = float64(v), true
+	}
+
+	return num1, num2, ok1 && ok2
 }
 
 // compareNumbers compares two numbers using the specified operator
@@ -692,7 +764,7 @@ func parseIndexOrName(content string) (segment, error) {
 	}
 
 	// 处理字符串字面量
-	if strings.HasPrefix(content, "'") && strings.HasSuffix(content, "'") {
+	if strings.HasPrefix(content, "'") && strings.HasSuffix(content, "'") && len(content) > 1 {
 		return &nameSegment{name: content[1 : len(content)-1]}, nil
 	}
 
@@ -707,6 +779,11 @@ func parseFunctionCall(content string) (segment, error) {
 		return nil, fmt.Errorf("invalid function call syntax: missing opening parenthesis")
 	}
 
+	// 检查闭合括号
+	if !strings.HasSuffix(content, ")") {
+		return nil, fmt.Errorf("invalid function call syntax: missing closing parenthesis")
+	}
+
 	name := content[:openParen]
 	argsStr := content[openParen+1 : len(content)-1]
 
@@ -717,6 +794,9 @@ func parseFunctionCall(content string) (segment, error) {
 		argParts := strings.Split(argsStr, ",")
 		for _, arg := range argParts {
 			arg = strings.TrimSpace(arg)
+			if arg == "" {
+				continue // 跳过空参数
+			}
 			// 尝试解析为数字
 			if num, err := strconv.ParseFloat(arg, 64); err == nil {
 				args = append(args, num)
@@ -724,7 +804,10 @@ func parseFunctionCall(content string) (segment, error) {
 			}
 			// 处理字符串参数
 			if strings.HasPrefix(arg, "'") && strings.HasSuffix(arg, "'") {
-				args = append(args, arg[1:len(arg)-1])
+				// 处理转义引号
+				str := arg[1 : len(arg)-1]
+				str = strings.ReplaceAll(str, "''", "'")
+				args = append(args, str)
 				continue
 			}
 			return nil, fmt.Errorf("unsupported argument type: %s", arg)

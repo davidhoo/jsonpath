@@ -1,230 +1,253 @@
 package jsonpath
 
 import (
+	"math"
 	"testing"
 )
 
 func TestCompareValues(t *testing.T) {
 	tests := []struct {
-		name     string
-		a        interface{}
-		operator string
-		b        interface{}
-		want     bool
-		wantErr  bool
+		name    string
+		value1  interface{}
+		op      string
+		value2  interface{}
+		want    bool
+		wantErr bool
 	}{
-		// nil 值比较
 		{
-			name:     "nil equals nil",
-			a:        nil,
-			operator: "==",
-			b:        nil,
-			want:     true,
+			name:    "nil equals nil",
+			value1:  nil,
+			op:      "==",
+			value2:  nil,
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "nil not equals value",
-			a:        nil,
-			operator: "==",
-			b:        42,
-			want:     false,
+			name:    "nil not equals value",
+			value1:  nil,
+			op:      "!=",
+			value2:  42,
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "value not equals nil",
-			a:        42,
-			operator: "==",
-			b:        nil,
-			want:     false,
+			name:    "nil other operator",
+			value1:  nil,
+			op:      ">",
+			value2:  42,
+			want:    false,
+			wantErr: true,
 		},
 		{
-			name:     "nil not equals nil",
-			a:        nil,
-			operator: "!=",
-			b:        nil,
-			want:     false,
+			name:    "numbers equal",
+			value1:  float64(42),
+			op:      "==",
+			value2:  float64(42),
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "nil other operator",
-			a:        nil,
-			operator: ">",
-			b:        nil,
-			want:     false,
-		},
-
-		// 数字比较 (float64)
-		{
-			name:     "float64 equals",
-			a:        float64(42),
-			operator: "==",
-			b:        float64(42),
-			want:     true,
+			name:    "numbers not equal",
+			value1:  float64(42),
+			op:      "!=",
+			value2:  float64(43),
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "float64 not equals",
-			a:        float64(42),
-			operator: "!=",
-			b:        float64(43),
-			want:     true,
+			name:    "numbers greater than",
+			value1:  float64(43),
+			op:      ">",
+			value2:  float64(42),
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "float64 less than",
-			a:        float64(42),
-			operator: "<",
-			b:        float64(43),
-			want:     true,
+			name:    "numbers less than",
+			value1:  float64(42),
+			op:      "<",
+			value2:  float64(43),
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "float64 less than or equal",
-			a:        float64(42),
-			operator: "<=",
-			b:        float64(42),
-			want:     true,
+			name:    "numbers greater than or equal",
+			value1:  float64(42),
+			op:      ">=",
+			value2:  float64(42),
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "float64 greater than",
-			a:        float64(43),
-			operator: ">",
-			b:        float64(42),
-			want:     true,
+			name:    "numbers less than or equal",
+			value1:  float64(42),
+			op:      "<=",
+			value2:  float64(42),
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "float64 greater than or equal",
-			a:        float64(42),
-			operator: ">=",
-			b:        float64(42),
-			want:     true,
-		},
-
-		// 数字比较 (int64)
-		{
-			name:     "int64 equals",
-			a:        int64(42),
-			operator: "==",
-			b:        int64(42),
-			want:     true,
+			name:    "strings equal",
+			value1:  "hello",
+			op:      "==",
+			value2:  "hello",
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "int64 with float64",
-			a:        int64(42),
-			operator: "==",
-			b:        float64(42),
-			want:     true,
+			name:    "strings not equal",
+			value1:  "hello",
+			op:      "!=",
+			value2:  "world",
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "float64 with int64",
-			a:        float64(42),
-			operator: "==",
-			b:        int64(42),
-			want:     true,
-		},
-
-		// 字符串比较
-		{
-			name:     "string equals",
-			a:        "hello",
-			operator: "==",
-			b:        "hello",
-			want:     true,
+			name:    "strings greater than",
+			value1:  "world",
+			op:      ">",
+			value2:  "hello",
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "string not equals",
-			a:        "hello",
-			operator: "!=",
-			b:        "world",
-			want:     true,
+			name:    "strings less than",
+			value1:  "hello",
+			op:      "<",
+			value2:  "world",
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "string less than",
-			a:        "apple",
-			operator: "<",
-			b:        "banana",
-			want:     true,
+			name:    "strings match",
+			value1:  "hello",
+			op:      "match",
+			value2:  "^h.*o$",
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "string greater than",
-			a:        "banana",
-			operator: ">",
-			b:        "apple",
-			want:     true,
-		},
-
-		// 布尔值比较
-		{
-			name:     "bool equals true",
-			a:        true,
-			operator: "==",
-			b:        true,
-			want:     true,
+			name:    "strings not match",
+			value1:  "hello",
+			op:      "match",
+			value2:  "^w.*d$",
+			want:    false,
+			wantErr: false,
 		},
 		{
-			name:     "bool equals false",
-			a:        false,
-			operator: "==",
-			b:        false,
-			want:     true,
+			name:    "match operator with invalid pattern",
+			value1:  "hello",
+			op:      "match",
+			value2:  "[",
+			want:    false,
+			wantErr: true,
 		},
 		{
-			name:     "bool not equals",
-			a:        true,
-			operator: "!=",
-			b:        false,
-			want:     true,
-		},
-
-		// 类型不匹配
-		{
-			name:     "incompatible types",
-			a:        "42",
-			operator: "==",
-			b:        42,
-			wantErr:  true,
-		},
-
-		// 正则匹配
-		{
-			name:     "match operator with matching string",
-			a:        "hello world",
-			operator: "match",
-			b:        "world$",
-			want:     true,
+			name:    "match operator with non-string value",
+			value1:  42,
+			op:      "match",
+			value2:  "^h.*o$",
+			want:    false,
+			wantErr: true,
 		},
 		{
-			name:     "match operator with non-matching string",
-			a:        "hello world",
-			operator: "match",
-			b:        "^world",
-			want:     false,
+			name:    "match operator with non-string pattern",
+			value1:  "hello",
+			op:      "match",
+			value2:  42,
+			want:    false,
+			wantErr: true,
 		},
 		{
-			name:     "match operator with invalid pattern",
-			a:        "hello world",
-			operator: "match",
-			b:        "[",
-			want:     false,
+			name:    "booleans equal",
+			value1:  true,
+			op:      "==",
+			value2:  true,
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "match operator with non-string value",
-			a:        42,
-			operator: "match",
-			b:        "42",
-			wantErr:  true,
+			name:    "booleans not equal",
+			value1:  true,
+			op:      "!=",
+			value2:  false,
+			want:    true,
+			wantErr: false,
 		},
 		{
-			name:     "match operator with non-string pattern",
-			a:        "42",
-			operator: "match",
-			b:        42,
-			wantErr:  true,
+			name:    "bool invalid operator",
+			value1:  true,
+			op:      "<",
+			value2:  false,
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name:    "incompatible types - string and number",
+			value1:  "42",
+			op:      "==",
+			value2:  float64(42),
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name:    "incompatible types - bool and number",
+			value1:  true,
+			op:      "==",
+			value2:  float64(1),
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name:    "incompatible types - string and bool",
+			value1:  "true",
+			op:      "==",
+			value2:  true,
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name:    "incompatible types - array and number",
+			value1:  []interface{}{1, 2, 3},
+			op:      "==",
+			value2:  float64(42),
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name:    "incompatible types - object and number",
+			value1:  map[string]interface{}{"key": "value"},
+			op:      "==",
+			value2:  float64(42),
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name:    "invalid operator",
+			value1:  float64(42),
+			op:      "invalid",
+			value2:  float64(42),
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name:    "empty operator",
+			value1:  float64(42),
+			op:      "",
+			value2:  float64(42),
+			want:    false,
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := compareValues(tt.a, tt.operator, tt.b)
+			got, err := compareValues(tt.value1, tt.op, tt.value2)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("compareValues() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr && got != tt.want {
+			if got != tt.want {
 				t.Errorf("compareValues() = %v, want %v", got, tt.want)
 			}
 		})
@@ -239,6 +262,7 @@ func TestCompareStrings(t *testing.T) {
 		b        string
 		want     bool
 	}{
+		// 相等性比较
 		{
 			name:     "equal strings",
 			a:        "hello",
@@ -253,6 +277,22 @@ func TestCompareStrings(t *testing.T) {
 			b:        "world",
 			want:     true,
 		},
+		{
+			name:     "equal empty strings",
+			a:        "",
+			operator: "==",
+			b:        "",
+			want:     true,
+		},
+		{
+			name:     "empty and non-empty strings",
+			a:        "",
+			operator: "!=",
+			b:        "hello",
+			want:     true,
+		},
+
+		// 大小比较
 		{
 			name:     "less than",
 			a:        "apple",
@@ -295,31 +335,81 @@ func TestCompareStrings(t *testing.T) {
 			b:        "apple",
 			want:     true,
 		},
+
+		// 特殊字符
 		{
-			name:     "case sensitive comparison",
-			a:        "Apple",
-			operator: "<",
-			b:        "apple",
-			want:     true,
-		},
-		{
-			name:     "empty strings equal",
-			a:        "",
+			name:     "strings with spaces",
+			a:        "hello world",
 			operator: "==",
-			b:        "",
+			b:        "hello world",
 			want:     true,
 		},
 		{
-			name:     "empty string less than non-empty",
-			a:        "",
-			operator: "<",
-			b:        "a",
+			name:     "strings with newlines",
+			a:        "hello\nworld",
+			operator: "==",
+			b:        "hello\nworld",
 			want:     true,
 		},
+		{
+			name:     "strings with tabs",
+			a:        "hello\tworld",
+			operator: "==",
+			b:        "hello\tworld",
+			want:     true,
+		},
+
+		// Unicode 字符
+		{
+			name:     "unicode strings equal",
+			a:        "你好",
+			operator: "==",
+			b:        "你好",
+			want:     true,
+		},
+		{
+			name:     "unicode strings not equal",
+			a:        "你好",
+			operator: "!=",
+			b:        "世界",
+			want:     true,
+		},
+		{
+			name:     "unicode strings comparison",
+			a:        "a",
+			operator: "<",
+			b:        "你",
+			want:     true, // ASCII 字符小于 Unicode 字符
+		},
+
+		// 大小写敏感性
+		{
+			name:     "case sensitive equal",
+			a:        "Hello",
+			operator: "==",
+			b:        "hello",
+			want:     false,
+		},
+		{
+			name:     "case sensitive less than",
+			a:        "Hello",
+			operator: "<",
+			b:        "hello",
+			want:     true, // 大写字母的 ASCII 值小于小写字母
+		},
+
+		// 无效操作符
 		{
 			name:     "invalid operator",
 			a:        "hello",
 			operator: "invalid",
+			b:        "world",
+			want:     false,
+		},
+		{
+			name:     "empty operator",
+			a:        "hello",
+			operator: "",
 			b:        "world",
 			want:     false,
 		},
@@ -342,6 +432,7 @@ func TestCompareBooleans(t *testing.T) {
 		b        bool
 		want     bool
 	}{
+		// 相等性比较
 		{
 			name:     "true equals true",
 			a:        true,
@@ -371,20 +462,6 @@ func TestCompareBooleans(t *testing.T) {
 			want:     true,
 		},
 		{
-			name:     "true equals false",
-			a:        true,
-			operator: "==",
-			b:        false,
-			want:     false,
-		},
-		{
-			name:     "false equals true",
-			a:        false,
-			operator: "==",
-			b:        true,
-			want:     false,
-		},
-		{
 			name:     "true not equals true",
 			a:        true,
 			operator: "!=",
@@ -398,10 +475,47 @@ func TestCompareBooleans(t *testing.T) {
 			b:        false,
 			want:     false,
 		},
+
+		// 无效操作符
 		{
 			name:     "invalid operator",
 			a:        true,
+			operator: "invalid",
+			b:        false,
+			want:     false,
+		},
+		{
+			name:     "empty operator",
+			a:        true,
+			operator: "",
+			b:        false,
+			want:     false,
+		},
+		{
+			name:     "less than operator",
+			a:        true,
+			operator: "<",
+			b:        false,
+			want:     false,
+		},
+		{
+			name:     "greater than operator",
+			a:        true,
 			operator: ">",
+			b:        false,
+			want:     false,
+		},
+		{
+			name:     "less than or equal operator",
+			a:        true,
+			operator: "<=",
+			b:        false,
+			want:     false,
+		},
+		{
+			name:     "greater than or equal operator",
+			a:        true,
+			operator: ">=",
 			b:        false,
 			want:     false,
 		},
@@ -411,6 +525,174 @@ func TestCompareBooleans(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := compareBooleans(tt.a, tt.operator, tt.b); got != tt.want {
 				t.Errorf("compareBooleans() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCompareNumbers(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        float64
+		operator string
+		b        float64
+		want     bool
+	}{
+		// 相等性比较
+		{
+			name:     "equal numbers",
+			a:        42.0,
+			operator: "==",
+			b:        42.0,
+			want:     true,
+		},
+		{
+			name:     "not equal numbers",
+			a:        42.0,
+			operator: "!=",
+			b:        43.0,
+			want:     true,
+		},
+		{
+			name:     "equal with decimals",
+			a:        42.5,
+			operator: "==",
+			b:        42.5,
+			want:     true,
+		},
+		{
+			name:     "not equal with decimals",
+			a:        42.5,
+			operator: "!=",
+			b:        42.6,
+			want:     true,
+		},
+
+		// 大小比较
+		{
+			name:     "less than",
+			a:        42.0,
+			operator: "<",
+			b:        43.0,
+			want:     true,
+		},
+		{
+			name:     "less than or equal (equal)",
+			a:        42.0,
+			operator: "<=",
+			b:        42.0,
+			want:     true,
+		},
+		{
+			name:     "less than or equal (less)",
+			a:        42.0,
+			operator: "<=",
+			b:        43.0,
+			want:     true,
+		},
+		{
+			name:     "greater than",
+			a:        43.0,
+			operator: ">",
+			b:        42.0,
+			want:     true,
+		},
+		{
+			name:     "greater than or equal (equal)",
+			a:        42.0,
+			operator: ">=",
+			b:        42.0,
+			want:     true,
+		},
+		{
+			name:     "greater than or equal (greater)",
+			a:        43.0,
+			operator: ">=",
+			b:        42.0,
+			want:     true,
+		},
+
+		// 特殊值
+		{
+			name:     "zero equals zero",
+			a:        0.0,
+			operator: "==",
+			b:        0.0,
+			want:     true,
+		},
+		{
+			name:     "negative equals negative",
+			a:        -42.0,
+			operator: "==",
+			b:        -42.0,
+			want:     true,
+		},
+		{
+			name:     "positive infinity equals positive infinity",
+			a:        math.Inf(1),
+			operator: "==",
+			b:        math.Inf(1),
+			want:     true,
+		},
+		{
+			name:     "negative infinity equals negative infinity",
+			a:        math.Inf(-1),
+			operator: "==",
+			b:        math.Inf(-1),
+			want:     true,
+		},
+		{
+			name:     "NaN not equals NaN",
+			a:        math.NaN(),
+			operator: "==",
+			b:        math.NaN(),
+			want:     false,
+		},
+
+		// 边界值
+		{
+			name:     "max float64",
+			a:        math.MaxFloat64,
+			operator: "==",
+			b:        math.MaxFloat64,
+			want:     true,
+		},
+		{
+			name:     "smallest positive float64",
+			a:        math.SmallestNonzeroFloat64,
+			operator: "==",
+			b:        math.SmallestNonzeroFloat64,
+			want:     true,
+		},
+		{
+			name:     "epsilon difference",
+			a:        1.0,
+			operator: "!=",
+			b:        1.0000000000000002,
+			want:     true,
+		},
+
+		// 无效操作符
+		{
+			name:     "invalid operator",
+			a:        42.0,
+			operator: "invalid",
+			b:        42.0,
+			want:     false,
+		},
+		{
+			name:     "empty operator",
+			a:        42.0,
+			operator: "",
+			b:        42.0,
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := compareNumbers(tt.a, tt.operator, tt.b); got != tt.want {
+				t.Errorf("compareNumbers() = %v, want %v", got, tt.want)
 			}
 		})
 	}

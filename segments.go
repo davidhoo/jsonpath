@@ -304,8 +304,10 @@ func calculateStep(step int) int {
 
 // 规范化切片范围
 func (s *sliceSegment) normalizeRange(length int) (start, end, step int) {
-	// 处理步长
-	step = calculateStep(s.step)
+	step = s.step
+	if step == 0 {
+		step = 1
+	}
 
 	// 处理起始索引
 	start = s.start
@@ -315,8 +317,21 @@ func (s *sliceSegment) normalizeRange(length int) (start, end, step int) {
 		} else {
 			start = length - 1
 		}
-	} else {
-		start = calculateIndex(start, length)
+	} else if start < 0 {
+		start = length + start
+		if start < 0 {
+			if step > 0 {
+				start = 0
+			} else {
+				start = -1
+			}
+		}
+	} else if start >= length {
+		if step > 0 {
+			start = length
+		} else {
+			start = length - 1
+		}
 	}
 
 	// 处理结束索引
@@ -327,8 +342,21 @@ func (s *sliceSegment) normalizeRange(length int) (start, end, step int) {
 		} else {
 			end = -1
 		}
-	} else {
-		end = calculateIndex(end, length)
+	} else if end < 0 {
+		end = length + end
+		if end < 0 {
+			if step > 0 {
+				end = 0
+			} else {
+				end = -1
+			}
+		}
+	} else if end >= length {
+		if step > 0 {
+			end = length
+		} else {
+			end = length - 1
+		}
 	}
 
 	return start, end, step
@@ -336,16 +364,31 @@ func (s *sliceSegment) normalizeRange(length int) (start, end, step int) {
 
 // 根据步长生成索引序列
 func generateIndices(start, end, step int) []int {
-	var indices []int
+	// 处理零步长
+	if step == 0 {
+		step = 1
+	}
 
-	// 检查无效的步长和范围
+	// 检查无效的范围
 	if step > 0 && start >= end {
-		return indices
+		return nil
 	}
 	if step < 0 && start <= end {
-		return indices
+		return nil
 	}
 
+	// 计算需要生成的索引数量
+	count := 0
+	if step > 0 {
+		count = (end - start + step - 1) / step
+	} else {
+		count = (start - end - step - 1) / (-step)
+	}
+
+	// 预分配切片
+	indices := make([]int, 0, count)
+
+	// 生成索引
 	if step > 0 {
 		for i := start; i < end; i += step {
 			indices = append(indices, i)
@@ -355,6 +398,7 @@ func generateIndices(start, end, step int) []int {
 			indices = append(indices, i)
 		}
 	}
+
 	return indices
 }
 
@@ -382,9 +426,19 @@ func (s *sliceSegment) evaluate(value interface{}) ([]interface{}, error) {
 
 	// 生成索引序列
 	indices := generateIndices(start, end, step)
+	if len(indices) == 0 {
+		return nil, nil
+	}
 
 	// 获取结果元素
-	return getArrayElements(arr, indices), nil
+	result := make([]interface{}, len(indices))
+	for i, idx := range indices {
+		if idx >= 0 && idx < len(arr) {
+			result[i] = arr[idx]
+		}
+	}
+
+	return result, nil
 }
 
 // 字符串表示
@@ -434,7 +488,7 @@ func (s *filterSegment) evaluate(data interface{}) ([]interface{}, error) {
 			if m, ok := item.(map[string]interface{}); ok {
 				result, err := s.evaluateConditions(m)
 				if err != nil {
-					return nil, err
+					return nil, err // 返回错误而不是继续处理
 				}
 				if result {
 					results = append(results, m)
@@ -485,7 +539,7 @@ func (s *filterSegment) evaluateCondition(cond filterCondition, item interface{}
 	// Get field value
 	value, err := getFieldValue(item, cond.field)
 	if err != nil {
-		return false, err
+		return false, nil // 字段不存在时返回 false，而不是错误
 	}
 
 	// Compare values
@@ -505,7 +559,11 @@ func (s *filterSegment) evaluateCondition(cond filterCondition, item interface{}
 		}
 		return re.MatchString(str), nil
 	default:
-		return compareValues(value, cond.operator, cond.value)
+		result, err := compareValues(value, cond.operator, cond.value)
+		if err != nil {
+			return false, fmt.Errorf("invalid operator: %s", cond.operator)
+		}
+		return result, nil
 	}
 }
 
@@ -521,6 +579,16 @@ func (s *filterSegment) String() string {
 	}
 	result.WriteString("]")
 	return result.String()
+}
+
+// String returns the string representation of a filter condition
+func (c filterCondition) String() string {
+	field := strings.TrimPrefix(c.field, "@.")
+	value := c.value
+	if str, ok := value.(string); ok {
+		value = "'" + str + "'"
+	}
+	return fmt.Sprintf("@.%s %s %v", field, c.operator, value)
 }
 
 // 多索引段
