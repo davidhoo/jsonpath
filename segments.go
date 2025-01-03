@@ -8,6 +8,9 @@ import (
 	"strings"
 )
 
+// ErrFunctionNotFound 表示函数未找到
+var ErrFunctionNotFound = fmt.Errorf("function not found")
+
 // 段类型定义
 type segment interface {
 	evaluate(value interface{}) ([]interface{}, error)
@@ -25,43 +28,100 @@ func parseFunctionArgs(argsStr string) ([]interface{}, error) {
 		return nil, nil
 	}
 
-	// 处理数字
-	if num, err := strconv.ParseFloat(argsStr, 64); err == nil {
-		return []interface{}{num}, nil
-	}
+	// 分割参数
+	var args []interface{}
+	var currentArg strings.Builder
+	var inQuote bool
+	var quoteChar rune
+	var inObject int
 
-	// 处理字符串（带引号）
-	if (strings.HasPrefix(argsStr, "'") && strings.HasSuffix(argsStr, "'")) ||
-		(strings.HasPrefix(argsStr, "\"") && strings.HasSuffix(argsStr, "\"")) {
-		return []interface{}{argsStr[1 : len(argsStr)-1]}, nil
-	}
-
-	// 处理对象（JSON格式）
-	if strings.HasPrefix(argsStr, "{") && strings.HasSuffix(argsStr, "}") {
-		var obj interface{}
-		if err := json.Unmarshal([]byte(argsStr), &obj); err == nil {
-			return []interface{}{obj}, nil
+	for _, ch := range argsStr {
+		switch {
+		case ch == '\'' || ch == '"':
+			if !inQuote {
+				inQuote = true
+				quoteChar = ch
+			} else if quoteChar == ch {
+				inQuote = false
+			}
+			currentArg.WriteRune(ch)
+		case ch == '{':
+			inObject++
+			currentArg.WriteRune(ch)
+		case ch == '}':
+			inObject--
+			currentArg.WriteRune(ch)
+		case ch == ',' && !inQuote && inObject == 0:
+			// 处理当前参数
+			arg := strings.TrimSpace(currentArg.String())
+			if arg != "" {
+				parsedArg, err := parseSingleArg(arg)
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, parsedArg)
+			}
+			currentArg.Reset()
+		default:
+			currentArg.WriteRune(ch)
 		}
 	}
 
-	return nil, fmt.Errorf("invalid argument format: %s", argsStr)
+	// 处理最后一个参数
+	arg := strings.TrimSpace(currentArg.String())
+	if arg != "" {
+		parsedArg, err := parseSingleArg(arg)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, parsedArg)
+	}
+
+	return args, nil
+}
+
+// 解析单个参数
+func parseSingleArg(arg string) (interface{}, error) {
+	// 处理数字
+	if num, err := strconv.ParseFloat(arg, 64); err == nil {
+		return num, nil
+	}
+
+	// 处理字符串（带引号）
+	if (strings.HasPrefix(arg, "'") && strings.HasSuffix(arg, "'")) ||
+		(strings.HasPrefix(arg, "\"") && strings.HasSuffix(arg, "\"")) {
+		return arg[1 : len(arg)-1], nil
+	}
+
+	// 处理对象（JSON格式）
+	if strings.HasPrefix(arg, "{") && strings.HasSuffix(arg, "}") {
+		var obj interface{}
+		if err := json.Unmarshal([]byte(arg), &obj); err == nil {
+			return obj, nil
+		}
+	}
+
+	return nil, fmt.Errorf("invalid argument format: %s", arg)
 }
 
 func (s *nameSegment) evaluate(value interface{}) ([]interface{}, error) {
 	// 处理函数调用
-	if strings.HasSuffix(s.name, ")") {
-		// 解析函数名和参数
+	if strings.Contains(s.name, "(") {
+		// 检查函数调用语法
 		openParen := strings.Index(s.name, "(")
-		if openParen == -1 {
-			return nil, fmt.Errorf("invalid function call syntax")
+		closeParen := strings.LastIndex(s.name, ")")
+		if openParen == -1 || closeParen == -1 || openParen > closeParen {
+			return nil, fmt.Errorf("invalid function call syntax: malformed function call")
 		}
+
+		// 解析函数名和参数
 		funcName := s.name[:openParen]
-		argsStr := s.name[openParen+1 : len(s.name)-1]
+		argsStr := s.name[openParen+1 : closeParen]
 
 		// 获取函数
 		fn, err := GetFunction(funcName)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unknown function: %s", funcName)
 		}
 
 		// 解析参数
@@ -69,7 +129,7 @@ func (s *nameSegment) evaluate(value interface{}) ([]interface{}, error) {
 		if argsStr != "" {
 			parsedArgs, err := parseFunctionArgs(argsStr)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("invalid argument: %v", err)
 			}
 			args = append([]interface{}{value}, parsedArgs...)
 		} else {
@@ -79,7 +139,19 @@ func (s *nameSegment) evaluate(value interface{}) ([]interface{}, error) {
 		// 调用函数
 		result, err := fn.Call(args)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("invalid argument: %v", err)
+		}
+
+		// 确保返回值是正确的类型
+		switch v := result.(type) {
+		case int:
+			result = float64(v)
+		case int64:
+			result = float64(v)
+		case int32:
+			result = float64(v)
+		case float32:
+			result = float64(v)
 		}
 
 		return []interface{}{result}, nil

@@ -21,30 +21,72 @@ func TestMapToArray(t *testing.T) {
 			want: []interface{}{},
 		},
 		{
-			name: "single item",
+			name: "single key-value pair",
 			m: map[string]interface{}{
 				"key": "value",
 			},
 			want: []interface{}{"value"},
 		},
 		{
-			name: "multiple items",
+			name: "multiple key-value pairs",
 			m: map[string]interface{}{
-				"key1": "value1",
-				"key2": 42,
-				"key3": true,
+				"name": "John",
+				"age":  30,
+				"city": "New York",
 			},
-			want: []interface{}{"value1", 42, true},
+			want: []interface{}{"John", 30, "New York"},
 		},
 		{
-			name: "nested structures",
+			name: "nested objects",
 			m: map[string]interface{}{
-				"key1": map[string]interface{}{"nested": "value"},
-				"key2": []interface{}{1, 2, 3},
+				"name": "John",
+				"address": map[string]interface{}{
+					"city":  "New York",
+					"state": "NY",
+				},
+				"age": 30,
 			},
 			want: []interface{}{
-				map[string]interface{}{"nested": "value"},
+				"John",
+				map[string]interface{}{
+					"city":  "New York",
+					"state": "NY",
+				},
+				30,
+			},
+		},
+		{
+			name: "array values",
+			m: map[string]interface{}{
+				"numbers": []interface{}{1, 2, 3},
+				"letters": []interface{}{"a", "b", "c"},
+			},
+			want: []interface{}{
 				[]interface{}{1, 2, 3},
+				[]interface{}{"a", "b", "c"},
+			},
+		},
+		{
+			name: "mixed types",
+			m: map[string]interface{}{
+				"string":  "text",
+				"number":  42,
+				"boolean": true,
+				"null":    nil,
+				"array":   []interface{}{1, "two", true},
+				"object": map[string]interface{}{
+					"key": "value",
+				},
+			},
+			want: []interface{}{
+				"text",
+				42,
+				true,
+				nil,
+				[]interface{}{1, "two", true},
+				map[string]interface{}{
+					"key": "value",
+				},
 			},
 		},
 	}
@@ -52,20 +94,16 @@ func TestMapToArray(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := mapToArray(tt.m)
-			// 由于 map 的迭代顺序是不确定的，我们需要比较集合而不是切片
-			if len(got) != len(tt.want) {
-				t.Errorf("mapToArray() returned %d items, want %d", len(got), len(tt.want))
-				return
+			// 由于 map 的迭代顺序是不确定的，我们需要排序后再比较
+			sortSlice := func(s []interface{}) {
+				sort.Slice(s, func(i, j int) bool {
+					return fmt.Sprintf("%v", s[i]) < fmt.Sprintf("%v", s[j])
+				})
 			}
-			// 创建一个映射来检查所有值是否存在
-			wantMap := make(map[interface{}]bool)
-			for _, v := range tt.want {
-				wantMap[toString(v)] = true
-			}
-			for _, v := range got {
-				if !wantMap[toString(v)] {
-					t.Errorf("mapToArray() returned unexpected value: %v", v)
-				}
+			sortSlice(got)
+			sortSlice(tt.want)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("mapToArray() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -114,19 +152,9 @@ func TestRecursiveCollect(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:  "primitive value",
-			value: 42,
-			want:  []interface{}{},
-		},
-		{
-			name:  "empty array",
-			value: []interface{}{},
-			want:  []interface{}{},
-		},
-		{
-			name:  "array with primitives",
-			value: []interface{}{1, "two", true},
-			want:  []interface{}{1, "two", true},
+			name:  "simple array",
+			value: []interface{}{1, 2, 3},
+			want:  []interface{}{1, 2, 3},
 		},
 		{
 			name: "nested array",
@@ -138,85 +166,91 @@ func TestRecursiveCollect(t *testing.T) {
 			want: []interface{}{1, []interface{}{2, 3}, 2, 3, 4},
 		},
 		{
-			name:  "empty object",
-			value: map[string]interface{}{},
-			want:  []interface{}{},
-		},
-		{
-			name: "object with primitives",
+			name: "simple object",
 			value: map[string]interface{}{
 				"a": 1,
-				"b": "two",
-				"c": true,
+				"b": 2,
 			},
-			want: []interface{}{1, "two", true},
+			want: []interface{}{1, 2},
 		},
 		{
 			name: "nested object",
 			value: map[string]interface{}{
 				"a": 1,
 				"b": map[string]interface{}{
-					"x": 2,
-					"y": 3,
+					"c": 2,
+					"d": 3,
 				},
-				"c": 4,
+				"e": 4,
 			},
-			want: []interface{}{1, map[string]interface{}{"x": 2, "y": 3}, 2, 3, 4},
+			want: []interface{}{1, map[string]interface{}{"c": 2, "d": 3}, 2, 3, 4},
 		},
 		{
-			name: "complex nested structure",
+			name: "mixed nested structure",
 			value: map[string]interface{}{
-				"a": []interface{}{
-					1,
-					map[string]interface{}{
-						"x": 2,
-						"y": []interface{}{3, 4},
-					},
-					5,
+				"a": []interface{}{1, 2},
+				"b": map[string]interface{}{
+					"c": []interface{}{3, 4},
+					"d": 5,
 				},
-				"b": 6,
+				"e": 6,
 			},
 			want: []interface{}{
-				[]interface{}{1, map[string]interface{}{"x": 2, "y": []interface{}{3, 4}}, 5},
-				1,
-				map[string]interface{}{"x": 2, "y": []interface{}{3, 4}},
-				2,
+				[]interface{}{1, 2},
+				1, 2,
+				map[string]interface{}{"c": []interface{}{3, 4}, "d": 5},
 				[]interface{}{3, 4},
-				3,
-				4,
+				3, 4,
 				5,
 				6,
 			},
+		},
+		{
+			name:  "primitive value",
+			value: 42,
+			want:  nil,
+		},
+		{
+			name:  "nil value",
+			value: nil,
+			want:  nil,
+		},
+		{
+			name: "empty structures",
+			value: map[string]interface{}{
+				"a": []interface{}{},
+				"b": map[string]interface{}{},
+			},
+			want: []interface{}{[]interface{}{}, map[string]interface{}{}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			seg := &recursiveSegment{}
-			var got []interface{}
-			err := seg.recursiveCollect(tt.value, &got)
-
+			s := &recursiveSegment{}
+			got, err := s.evaluate(tt.value)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("recursiveCollect() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("recursiveSegment.evaluate() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 
-			// 由于递归收集的顺序可能不同，我们需要比较集合而不是切片
-			if len(got) != len(tt.want) {
-				t.Errorf("recursiveCollect() returned %d items, want %d", len(got), len(tt.want))
-				return
-			}
-
-			// 创建映射来检查所有值是否存在
-			wantMap := make(map[interface{}]bool)
-			for _, v := range tt.want {
-				wantMap[toString(v)] = true
-			}
-
-			for _, v := range got {
-				if !wantMap[toString(v)] {
-					t.Errorf("recursiveCollect() returned unexpected value: %v", v)
+			if tt.want == nil {
+				if len(got) != 0 {
+					t.Errorf("recursiveSegment.evaluate() = %v, want empty result", got)
 				}
+				return
+			}
+
+			// 由于 map 的迭代顺序是不确定的，我们需要排序后再比较
+			sortSlice := func(s []interface{}) {
+				sort.Slice(s, func(i, j int) bool {
+					return fmt.Sprintf("%v", s[i]) < fmt.Sprintf("%v", s[j])
+				})
+			}
+			sortSlice(got)
+			sortSlice(tt.want)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("recursiveSegment.evaluate() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -359,6 +393,55 @@ func TestGenerateIndices(t *testing.T) {
 			step:  3,
 			want:  []int{0, 3, 6, 9},
 		},
+		{
+			name:  "zero step",
+			start: 0,
+			end:   5,
+			step:  0,
+			want:  nil,
+		},
+		{
+			name:  "single element range",
+			start: 1,
+			end:   2,
+			step:  1,
+			want:  []int{1},
+		},
+		{
+			name:  "negative indices",
+			start: -3,
+			end:   -1,
+			step:  1,
+			want:  []int{-3, -2},
+		},
+		{
+			name:  "step larger than range",
+			start: 0,
+			end:   5,
+			step:  10,
+			want:  []int{0},
+		},
+		{
+			name:  "negative step larger than range",
+			start: 5,
+			end:   0,
+			step:  -10,
+			want:  []int{5},
+		},
+		{
+			name:  "empty range at start",
+			start: 0,
+			end:   0,
+			step:  1,
+			want:  nil,
+		},
+		{
+			name:  "empty range at end",
+			start: 5,
+			end:   5,
+			step:  1,
+			want:  nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -372,6 +455,283 @@ func TestGenerateIndices(t *testing.T) {
 			} else if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("generateIndices(%v, %v, %v) = %v, want %v",
 					tt.start, tt.end, tt.step, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNameSegmentEvaluate(t *testing.T) {
+	tests := []struct {
+		name        string
+		segment     *nameSegment
+		value       interface{}
+		want        []interface{}
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:    "simple field access",
+			segment: &nameSegment{name: "name"},
+			value: map[string]interface{}{
+				"name": "John",
+				"age":  30,
+			},
+			want: []interface{}{"John"},
+		},
+		{
+			name:    "nested field access",
+			segment: &nameSegment{name: "address"},
+			value: map[string]interface{}{
+				"name": "John",
+				"address": map[string]interface{}{
+					"city": "New York",
+				},
+			},
+			want: []interface{}{map[string]interface{}{
+				"city": "New York",
+			}},
+		},
+		{
+			name:    "field not found",
+			segment: &nameSegment{name: "phone"},
+			value: map[string]interface{}{
+				"name": "John",
+				"age":  30,
+			},
+			wantErr:     true,
+			errContains: "field phone not found",
+		},
+		{
+			name:        "value is not an object",
+			segment:     &nameSegment{name: "name"},
+			value:       "not an object",
+			wantErr:     true,
+			errContains: "value is not an object",
+		},
+		{
+			name:    "function call without arguments",
+			segment: &nameSegment{name: "length()"},
+			value:   []interface{}{1, 2, 3},
+			want:    []interface{}{float64(3)},
+		},
+		{
+			name:        "function call with arguments",
+			segment:     &nameSegment{name: "min(1,2,3)"},
+			value:       []interface{}{4, 5, 6},
+			wantErr:     true,
+			errContains: "invalid argument: min() requires exactly 1 argument",
+		},
+		{
+			name:    "function call with string argument",
+			segment: &nameSegment{name: "match('pattern')"},
+			value:   "test pattern",
+			want:    []interface{}{true},
+		},
+		{
+			name:        "invalid function call syntax",
+			segment:     &nameSegment{name: "invalid("},
+			value:       []interface{}{1, 2, 3},
+			wantErr:     true,
+			errContains: "invalid function call syntax",
+		},
+		{
+			name:        "unknown function",
+			segment:     &nameSegment{name: "unknown()"},
+			value:       []interface{}{1, 2, 3},
+			wantErr:     true,
+			errContains: "unknown function",
+		},
+		{
+			name:        "invalid function arguments",
+			segment:     &nameSegment{name: "min('invalid')"},
+			value:       []interface{}{1, 2, 3},
+			wantErr:     true,
+			errContains: "invalid argument",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.segment.evaluate(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("nameSegment.evaluate() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err != nil {
+				if !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("nameSegment.evaluate() error = %v, want error containing %v", err, tt.errContains)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("nameSegment.evaluate() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNameSegmentString(t *testing.T) {
+	segment := &nameSegment{name: "test"}
+	if got := segment.String(); got != "test" {
+		t.Errorf("nameSegment.String() = %v, want %v", got, "test")
+	}
+}
+
+func TestIndexSegmentEvaluate(t *testing.T) {
+	tests := []struct {
+		name        string
+		segment     *indexSegment
+		value       interface{}
+		want        []interface{}
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:    "positive index within bounds",
+			segment: &indexSegment{index: 1},
+			value:   []interface{}{1, 2, 3},
+			want:    []interface{}{2},
+		},
+		{
+			name:    "zero index",
+			segment: &indexSegment{index: 0},
+			value:   []interface{}{1, 2, 3},
+			want:    []interface{}{1},
+		},
+		{
+			name:    "negative index",
+			segment: &indexSegment{index: -1},
+			value:   []interface{}{1, 2, 3},
+			want:    []interface{}{3},
+		},
+		{
+			name:    "index out of bounds (positive)",
+			segment: &indexSegment{index: 3},
+			value:   []interface{}{1, 2, 3},
+			want:    []interface{}{},
+		},
+		{
+			name:    "index out of bounds (negative)",
+			segment: &indexSegment{index: -4},
+			value:   []interface{}{1, 2, 3},
+			want:    []interface{}{},
+		},
+		{
+			name:    "empty array",
+			segment: &indexSegment{index: 0},
+			value:   []interface{}{},
+			want:    []interface{}{},
+		},
+		{
+			name:        "value is not an array",
+			segment:     &indexSegment{index: 0},
+			value:       "not an array",
+			wantErr:     true,
+			errContains: "value is not an array",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.segment.evaluate(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("indexSegment.evaluate() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err != nil {
+				if !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("indexSegment.evaluate() error = %v, want error containing %v", err, tt.errContains)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("indexSegment.evaluate() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIndexSegmentString(t *testing.T) {
+	tests := []struct {
+		name    string
+		segment *indexSegment
+		want    string
+	}{
+		{
+			name:    "positive index",
+			segment: &indexSegment{index: 1},
+			want:    "[1]",
+		},
+		{
+			name:    "zero index",
+			segment: &indexSegment{index: 0},
+			want:    "[0]",
+		},
+		{
+			name:    "negative index",
+			segment: &indexSegment{index: -1},
+			want:    "[-1]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.segment.String(); got != tt.want {
+				t.Errorf("indexSegment.String() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIndexSegmentNormalizeIndex(t *testing.T) {
+	tests := []struct {
+		name    string
+		segment *indexSegment
+		length  int
+		want    int
+	}{
+		{
+			name:    "positive index",
+			segment: &indexSegment{index: 1},
+			length:  3,
+			want:    1,
+		},
+		{
+			name:    "zero index",
+			segment: &indexSegment{index: 0},
+			length:  3,
+			want:    0,
+		},
+		{
+			name:    "negative index",
+			segment: &indexSegment{index: -1},
+			length:  3,
+			want:    2,
+		},
+		{
+			name:    "negative index with length 1",
+			segment: &indexSegment{index: -1},
+			length:  1,
+			want:    0,
+		},
+		{
+			name:    "negative index equals negative length",
+			segment: &indexSegment{index: -3},
+			length:  3,
+			want:    0,
+		},
+		{
+			name:    "negative index exceeds length",
+			segment: &indexSegment{index: -4},
+			length:  3,
+			want:    -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.segment.normalizeIndex(tt.length); got != tt.want {
+				t.Errorf("indexSegment.normalizeIndex() = %v, want %v", got, tt.want)
 			}
 		})
 	}

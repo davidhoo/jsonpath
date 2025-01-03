@@ -97,43 +97,60 @@ func TestRecursiveSegmentString(t *testing.T) {
 
 func TestParseMultiIndexSegment(t *testing.T) {
 	tests := []struct {
-		name        string
-		content     string
-		wantIndices []int
-		wantErr     bool
-		errContains string
+		name    string
+		content string
+		want    *multiIndexSegment
+		wantErr bool
 	}{
 		{
-			name:        "single index",
-			content:     "1",
-			wantIndices: []int{1},
+			name:    "single index",
+			content: "1",
+			want:    &multiIndexSegment{indices: []int{1}},
+			wantErr: false,
 		},
 		{
-			name:        "multiple indices",
-			content:     "1,2,3",
-			wantIndices: []int{1, 2, 3},
+			name:    "multiple indices",
+			content: "1,2,3",
+			want:    &multiIndexSegment{indices: []int{1, 2, 3}},
+			wantErr: false,
 		},
 		{
-			name:        "indices with spaces",
-			content:     "1, 2, 3",
-			wantIndices: []int{1, 2, 3},
+			name:    "negative indices",
+			content: "-1,-2,-3",
+			want:    &multiIndexSegment{indices: []int{-1, -2, -3}},
+			wantErr: false,
 		},
 		{
-			name:        "negative indices",
-			content:     "-1,-2,-3",
-			wantIndices: []int{-1, -2, -3},
+			name:    "mixed indices",
+			content: "0,1,-1,2,-2",
+			want:    &multiIndexSegment{indices: []int{0, 1, -1, 2, -2}},
+			wantErr: false,
 		},
 		{
-			name:        "invalid index",
-			content:     "1,a,3",
-			wantErr:     true,
-			errContains: "invalid index",
+			name:    "with spaces",
+			content: "1, 2, 3",
+			want:    &multiIndexSegment{indices: []int{1, 2, 3}},
+			wantErr: false,
 		},
 		{
-			name:        "empty index",
-			content:     "1,,3",
-			wantErr:     true,
-			errContains: "invalid index",
+			name:    "invalid index",
+			content: "1,a,3",
+			wantErr: true,
+		},
+		{
+			name:    "empty index",
+			content: "1,,3",
+			wantErr: true,
+		},
+		{
+			name:    "trailing comma",
+			content: "1,2,",
+			wantErr: true,
+		},
+		{
+			name:    "leading comma",
+			content: ",1,2",
+			wantErr: true,
 		},
 	}
 
@@ -144,20 +161,10 @@ func TestParseMultiIndexSegment(t *testing.T) {
 				t.Errorf("parseMultiIndexSegment() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if err != nil {
-				if !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("parseMultiIndexSegment() error = %v, want error containing %v", err, tt.errContains)
+			if !tt.wantErr {
+				if !reflect.DeepEqual(got, tt.want) {
+					t.Errorf("parseMultiIndexSegment() = %v, want %v", got, tt.want)
 				}
-				return
-			}
-
-			segment, ok := got.(*multiIndexSegment)
-			if !ok {
-				t.Fatal("parseMultiIndexSegment() returned wrong type")
-			}
-
-			if !reflect.DeepEqual(segment.indices, tt.wantIndices) {
-				t.Errorf("parseMultiIndexSegment() indices = %v, want %v", segment.indices, tt.wantIndices)
 			}
 		})
 	}
@@ -173,76 +180,89 @@ func TestMultiIndexSegmentString(t *testing.T) {
 
 func TestParseSliceSegment(t *testing.T) {
 	tests := []struct {
-		name        string
-		content     string
-		wantSlice   *sliceSegment
-		wantErr     bool
-		errContains string
+		name    string
+		content string
+		want    *sliceSegment
+		wantErr bool
 	}{
 		{
-			name:      "empty slice",
-			content:   ":",
-			wantSlice: &sliceSegment{start: 0, end: 0, step: 1},
+			name:    "empty slice",
+			content: ":",
+			want:    &sliceSegment{start: 0, end: 0, step: 1},
+			wantErr: false,
 		},
 		{
-			name:      "start only",
-			content:   "1:",
-			wantSlice: &sliceSegment{start: 1, end: 0, step: 1},
+			name:    "start only",
+			content: "1:",
+			want:    &sliceSegment{start: 1, end: 0, step: 1},
+			wantErr: false,
 		},
 		{
-			name:      "end only",
-			content:   ":2",
-			wantSlice: &sliceSegment{start: 0, end: 2, step: 1},
+			name:    "end only",
+			content: ":2",
+			want:    &sliceSegment{start: 0, end: 2, step: 1},
+			wantErr: false,
 		},
 		{
-			name:      "start and end",
-			content:   "1:2",
-			wantSlice: &sliceSegment{start: 1, end: 2, step: 1},
+			name:    "start and end",
+			content: "1:2",
+			want:    &sliceSegment{start: 1, end: 2, step: 1},
+			wantErr: false,
 		},
 		{
-			name:      "with step",
-			content:   "1:5:2",
-			wantSlice: &sliceSegment{start: 1, end: 5, step: 2},
+			name:    "negative indices",
+			content: "-2:-1",
+			want:    &sliceSegment{start: -2, end: -1, step: 1},
+			wantErr: false,
 		},
 		{
-			name:      "negative indices",
-			content:   "-2:-1",
-			wantSlice: &sliceSegment{start: -2, end: -1, step: 1},
+			name:    "with step",
+			content: "1:5:2",
+			want:    &sliceSegment{start: 1, end: 5, step: 2},
+			wantErr: false,
 		},
 		{
-			name:      "negative step",
-			content:   "5:1:-1",
-			wantSlice: &sliceSegment{start: 5, end: 1, step: -1},
+			name:    "negative step",
+			content: "5:1:-1",
+			want:    &sliceSegment{start: 5, end: 1, step: -1},
+			wantErr: false,
 		},
 		{
-			name:        "invalid start",
-			content:     "a:",
-			wantErr:     true,
-			errContains: "invalid start index",
+			name:    "empty start with step",
+			content: ":5:2",
+			want:    &sliceSegment{start: 0, end: 5, step: 2},
+			wantErr: false,
 		},
 		{
-			name:        "invalid end",
-			content:     ":b",
-			wantErr:     true,
-			errContains: "invalid end index",
+			name:    "empty end with step",
+			content: "1::2",
+			want:    &sliceSegment{start: 1, end: 0, step: 2},
+			wantErr: false,
 		},
 		{
-			name:        "invalid step",
-			content:     "1:2:c",
-			wantErr:     true,
-			errContains: "invalid step",
+			name:    "invalid start",
+			content: "a:2",
+			wantErr: true,
 		},
 		{
-			name:        "zero step",
-			content:     "1:2:0",
-			wantErr:     true,
-			errContains: "step cannot be zero",
+			name:    "invalid end",
+			content: "1:b",
+			wantErr: true,
 		},
 		{
-			name:        "too many parts",
-			content:     "1:2:3:4",
-			wantErr:     true,
-			errContains: "invalid slice syntax",
+			name:    "invalid step",
+			content: "1:2:c",
+			wantErr: true,
+		},
+		{
+			name:    "zero step",
+			content: "1:2:0",
+			wantErr: true,
+		},
+		{
+			name:    "too many parts",
+			content: "1:2:3:4",
+			wantErr: true,
 		},
 	}
 
@@ -253,20 +273,10 @@ func TestParseSliceSegment(t *testing.T) {
 				t.Errorf("parseSliceSegment() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if err != nil {
-				if !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("parseSliceSegment() error = %v, want error containing %v", err, tt.errContains)
+			if !tt.wantErr {
+				if !reflect.DeepEqual(got, tt.want) {
+					t.Errorf("parseSliceSegment() = %v, want %v", got, tt.want)
 				}
-				return
-			}
-
-			segment, ok := got.(*sliceSegment)
-			if !ok {
-				t.Fatal("parseSliceSegment() returned wrong type")
-			}
-
-			if !reflect.DeepEqual(segment, tt.wantSlice) {
-				t.Errorf("parseSliceSegment() = %+v, want %+v", segment, tt.wantSlice)
 			}
 		})
 	}
