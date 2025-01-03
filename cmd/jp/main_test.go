@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -184,6 +185,47 @@ func TestReadInput(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNoInputShowsHelp(t *testing.T) {
+	// 保存原始的 os.Args 和 os.Stderr
+	oldArgs := os.Args
+	oldStderr := os.Stderr
+	defer func() {
+		os.Args = oldArgs
+		os.Stderr = oldStderr
+	}()
+
+	// 创建管道来捕获输出
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+
+	// 设置空参数
+	os.Args = []string{"jp"}
+
+	// 在一个 goroutine 中运行程序
+	exit := make(chan bool)
+	go func() {
+		err := run()
+		if err != nil {
+			t.Error(err)
+		}
+		w.Close()
+		exit <- true
+	}()
+
+	// 读取输出
+	var output strings.Builder
+	io.Copy(&output, r)
+	<-exit
+
+	// 检查输出是否包含帮助信息的关键部分
+	if !strings.Contains(output.String(), "A JSONPath processor that fully complies with RFC 9535") {
+		t.Error("Help message not shown when no input provided")
 	}
 }
 
