@@ -428,3 +428,122 @@ func TestFunctionSegmentString(t *testing.T) {
 		})
 	}
 }
+
+func TestParseIndexOrName(t *testing.T) {
+	tests := []struct {
+		name        string
+		content     string
+		wantType    string
+		wantValue   interface{}
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:      "positive index",
+			content:   "42",
+			wantType:  "indexSegment",
+			wantValue: 42,
+		},
+		{
+			name:      "negative index",
+			content:   "-1",
+			wantType:  "indexSegment",
+			wantValue: -1,
+		},
+		{
+			name:      "zero index",
+			content:   "0",
+			wantType:  "indexSegment",
+			wantValue: 0,
+		},
+		{
+			name:      "quoted string",
+			content:   "'hello'",
+			wantType:  "nameSegment",
+			wantValue: "hello",
+		},
+		{
+			name:      "unquoted string",
+			content:   "hello",
+			wantType:  "nameSegment",
+			wantValue: "hello",
+		},
+		{
+			name:      "special characters in quoted string",
+			content:   "'hello.world'",
+			wantType:  "nameSegment",
+			wantValue: "hello.world",
+		},
+		{
+			name:      "special characters in unquoted string",
+			content:   "hello_world",
+			wantType:  "nameSegment",
+			wantValue: "hello_world",
+		},
+		{
+			name:      "empty quoted string",
+			content:   "''",
+			wantType:  "nameSegment",
+			wantValue: "",
+		},
+		{
+			name:      "function call",
+			content:   "length()",
+			wantType:  "functionSegment",
+			wantValue: "length",
+		},
+		{
+			name:      "function call with arguments",
+			content:   "min(1,2,3)",
+			wantType:  "functionSegment",
+			wantValue: "min",
+		},
+		{
+			name:      "function call with string argument",
+			content:   "match('pattern')",
+			wantType:  "functionSegment",
+			wantValue: "match",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseIndexOrName(tt.content)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseIndexOrName() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err != nil {
+				if !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("parseIndexOrName() error = %v, want error containing %v", err, tt.errContains)
+				}
+				return
+			}
+
+			// 检查段类型
+			gotType := reflect.TypeOf(got).String()
+			if !strings.HasSuffix(gotType, tt.wantType) {
+				t.Errorf("parseIndexOrName() returned %v, want type %v", gotType, tt.wantType)
+				return
+			}
+
+			// 检查段值
+			switch v := got.(type) {
+			case *indexSegment:
+				if v.index != tt.wantValue.(int) {
+					t.Errorf("parseIndexOrName() index = %v, want %v", v.index, tt.wantValue)
+				}
+			case *nameSegment:
+				if v.name != tt.wantValue.(string) {
+					t.Errorf("parseIndexOrName() name = %v, want %v", v.name, tt.wantValue)
+				}
+			case *functionSegment:
+				if v.name != tt.wantValue.(string) {
+					t.Errorf("parseIndexOrName() function name = %v, want %v", v.name, tt.wantValue)
+				}
+			default:
+				t.Errorf("parseIndexOrName() returned unexpected type %T", got)
+			}
+		})
+	}
+}
