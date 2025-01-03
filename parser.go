@@ -721,21 +721,20 @@ func parseFunctionCall(content string) (segment, error) {
 	argsStr := content[openParen+1 : len(content)-1]
 
 	// 解析参数
-	var args []interface{}
+	args := make([]interface{}, 0)
 	if argsStr != "" {
 		// 简单参数解析，暂时只支持数字和字符串
 		argParts := strings.Split(argsStr, ",")
-		args = make([]interface{}, len(argParts))
-		for i, arg := range argParts {
+		for _, arg := range argParts {
 			arg = strings.TrimSpace(arg)
 			// 尝试解析为数字
 			if num, err := strconv.ParseFloat(arg, 64); err == nil {
-				args[i] = num
+				args = append(args, num)
 				continue
 			}
 			// 处理字符串参数
 			if strings.HasPrefix(arg, "'") && strings.HasSuffix(arg, "'") {
-				args[i] = arg[1 : len(arg)-1]
+				args = append(args, arg[1:len(arg)-1])
 				continue
 			}
 			return nil, fmt.Errorf("unsupported argument type: %s", arg)

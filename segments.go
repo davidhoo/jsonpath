@@ -265,6 +265,15 @@ func (s *sliceSegment) normalizeRange(length int) (start, end, step int) {
 // 根据步长生成索引序列
 func generateIndices(start, end, step int) []int {
 	var indices []int
+
+	// 检查无效的步长和范围
+	if step > 0 && start >= end {
+		return indices
+	}
+	if step < 0 && start <= end {
+		return indices
+	}
+
 	if step > 0 {
 		for i := start; i < end; i += step {
 			indices = append(indices, i)
@@ -308,7 +317,17 @@ func (s *sliceSegment) evaluate(value interface{}) ([]interface{}, error) {
 
 // 字符串表示
 func (s *sliceSegment) String() string {
-	return fmt.Sprintf("[%d:%d:%d]", s.start, s.end, s.step)
+	var result strings.Builder
+	result.WriteString("[")
+	result.WriteString(strconv.Itoa(s.start))
+	result.WriteString(":")
+	result.WriteString(strconv.Itoa(s.end))
+	if s.step != 1 {
+		result.WriteString(":")
+		result.WriteString(strconv.Itoa(s.step))
+	}
+	result.WriteString("]")
+	return result.String()
 }
 
 // 过滤器段
@@ -496,15 +515,26 @@ func (s *functionSegment) evaluate(value interface{}) ([]interface{}, error) {
 	return []interface{}{result}, nil
 }
 
+// String returns the string representation of the function segment
 func (s *functionSegment) String() string {
-	args := make([]string, len(s.args))
+	var result strings.Builder
+	result.WriteString(s.name)
+	result.WriteString("(")
+
 	for i, arg := range s.args {
+		if i > 0 {
+			result.WriteString(",")
+		}
 		switch v := arg.(type) {
 		case string:
-			args[i] = fmt.Sprintf("'%s'", v)
-		default:
-			args[i] = fmt.Sprintf("%v", v)
+			result.WriteString("'")
+			result.WriteString(v)
+			result.WriteString("'")
+		case float64:
+			result.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
 		}
 	}
-	return fmt.Sprintf("%s(%s)", s.name, strings.Join(args, ","))
+
+	result.WriteString(")")
+	return result.String()
 }
