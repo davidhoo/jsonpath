@@ -344,6 +344,7 @@ func ParseFlags() (string, string, error) {
 	flagSet.BoolVar(&cfg.compact, "c", false, "Compact output")
 	flagSet.BoolVar(&cfg.noColor, "no-color", false, "Disable colored output")
 	flagSet.BoolVar(&help, "h", false, "Show help")
+	flagSet.BoolVar(&help, "help", false, "Show help")
 	flagSet.BoolVar(&version, "v", false, "Show version")
 
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
