@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // Function represents a JSONPath function
@@ -27,6 +28,34 @@ func (f *builtinFunction) Call(args []interface{}) (interface{}, error) {
 
 func (f *builtinFunction) Name() string {
 	return f.name
+}
+
+// regexCache 用于缓存编译后的正则表达式
+var regexCache = make(map[string]*regexp.Regexp)
+var regexCacheMutex sync.RWMutex
+
+// getCompiledRegex 从缓存中获取或编译正则表达式
+func getCompiledRegex(pattern string) (*regexp.Regexp, error) {
+	// 先尝试从缓存中读取
+	regexCacheMutex.RLock()
+	if re, ok := regexCache[pattern]; ok {
+		regexCacheMutex.RUnlock()
+		return re, nil
+	}
+	regexCacheMutex.RUnlock()
+
+	// 如果缓存中没有，则编译正则表达式
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	// 将编译后的正则表达式存入缓存
+	regexCacheMutex.Lock()
+	regexCache[pattern] = re
+	regexCacheMutex.Unlock()
+
+	return re, nil
 }
 
 // globalFunctions is the registry of built-in functions
@@ -351,33 +380,105 @@ var globalFunctions = map[string]Function{
 	"match": &builtinFunction{
 		name: "match",
 		callback: func(args []interface{}) (interface{}, error) {
-			// 验证参数数量
+			// 1. 验证参数数量
 			if len(args) != 2 {
 				return nil, fmt.Errorf("match() requires exactly 2 arguments: string and pattern")
 			}
 
-			// 验证第一个参数(要匹配的字符串)
-			str, ok := args[0].(string)
-			if !ok {
-				return false, nil // 如果不是字符串,返回false而不是错误
-			}
-
-			// 验证第二个参数(正则表达式模式)
+			// 2. 获取并验证第二个参数（正则表达式模式）
 			pattern, ok := args[1].(string)
 			if !ok {
 				return nil, fmt.Errorf("match() second argument must be a string pattern")
 			}
 
-			// 处理转义字符
-			pattern = strings.ReplaceAll(pattern, "\\\\", "\\")
-
-			// 编译正则表达式
-			re, err := regexp.Compile(pattern)
-			if err != nil {
-				return false, nil // 如果正则表达式无效,返回false而不是错误
+			// 3. 处理空模式
+			if pattern == "" {
+				return false, nil
 			}
 
-			// 执行匹配
+			// 4. 获取第一个参数（要匹配的字符串）
+			var str string
+			switch v := args[0].(type) {
+			case string:
+				str = v
+			default:
+				// 对于非字符串值，返回 false
+				return false, nil
+			}
+
+			// 5. 处理正则表达式模式
+			var result strings.Builder
+			var escaped bool
+			var inCharClass bool
+
+			for i := 0; i < len(pattern); i++ {
+				ch := pattern[i]
+				if escaped {
+					switch ch {
+					case 'd', 'D', 'w', 'W', 's', 'S', 'b', 'B':
+						// 保持原样的特殊字符序列
+						result.WriteByte('\\')
+						result.WriteByte(ch)
+					case 'n':
+						result.WriteString(`\n`)
+					case 'r':
+						result.WriteString(`\r`)
+					case 't':
+						result.WriteString(`\t`)
+					case '[', ']', '(', ')', '{', '}', '\\', '.', '*', '+', '?', '|', '^', '$':
+						// 转义元字符
+						result.WriteByte(ch)
+					case 'p', 'P':
+						// 处理 Unicode 属性
+						result.WriteByte('\\')
+						result.WriteByte(ch)
+						if i+1 < len(pattern) && pattern[i+1] == '{' {
+							i++ // 跳过 '{'
+							result.WriteByte('{')
+							for i+1 < len(pattern) && pattern[i+1] != '}' {
+								i++
+								result.WriteByte(pattern[i])
+							}
+							if i+1 < len(pattern) && pattern[i+1] == '}' {
+								i++
+								result.WriteByte('}')
+							}
+						}
+					default:
+						if inCharClass {
+							result.WriteByte(ch)
+						} else {
+							result.WriteByte(ch)
+						}
+					}
+					escaped = false
+				} else if ch == '\\' {
+					escaped = true
+				} else if ch == '[' {
+					inCharClass = true
+					result.WriteByte(ch)
+				} else if ch == ']' {
+					inCharClass = false
+					result.WriteByte(ch)
+				} else {
+					result.WriteByte(ch)
+				}
+			}
+
+			// 处理末尾的反斜杠
+			if escaped {
+				result.WriteByte('\\')
+			}
+
+			pattern = result.String()
+
+			// 6. 获取或编译正则表达式
+			re, err := getCompiledRegex(pattern)
+			if err != nil {
+				return false, nil // 正则表达式语法错误时返回 false
+			}
+
+			// 7. 执行匹配
 			return re.MatchString(str), nil
 		},
 	},
