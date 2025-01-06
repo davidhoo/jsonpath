@@ -47,13 +47,23 @@ func newStringComparer(opts ...stringCompareOptions) *stringComparer {
 //	0: a == b
 //	1: a > b
 func (sc *stringComparer) compare(a, b string) int {
-	if !sc.options.caseSensitive {
-		a = strings.ToLower(a)
-		b = strings.ToLower(b)
+	if sc.options.caseSensitive {
+		// 当大小写敏感且使用默认英语环境时，使用 strings.Compare
+		if sc.options.locale == language.English {
+			return strings.Compare(a, b)
+		}
+		// 当大小写敏感且使用其他语言环境时，使用 collator
+		result := sc.collator.CompareString(a, b)
+		if result < 0 {
+			return -1
+		} else if result > 0 {
+			return 1
+		}
+		return 0
 	}
 
-	// 使用 collator 进行 Unicode 感知的比较
-	result := sc.collator.CompareString(a, b)
+	// 当大小写不敏感时，使用 collator 并转换为小写
+	result := sc.collator.CompareString(strings.ToLower(a), strings.ToLower(b))
 	if result < 0 {
 		return -1
 	} else if result > 0 {
