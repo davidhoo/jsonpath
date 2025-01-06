@@ -632,21 +632,7 @@ func compareNumbers(a float64, operator string, b float64) bool {
 
 // compareStrings compares two strings using the specified operator
 func compareStrings(a string, operator string, b string) bool {
-	switch operator {
-	case "==":
-		return a == b
-	case "!=":
-		return a != b
-	case "<":
-		return a < b
-	case "<=":
-		return a <= b
-	case ">":
-		return a > b
-	case ">=":
-		return a >= b
-	}
-	return false
+	return standardCompareStrings(a, operator, b)
 }
 
 // compareBooleans compares two booleans using the specified operator
