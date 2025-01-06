@@ -3,9 +3,11 @@ package jsonpath
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -56,6 +58,137 @@ func getCompiledRegex(pattern string) (*regexp.Regexp, error) {
 	regexCacheMutex.Unlock()
 
 	return re, nil
+}
+
+// numberType 表示数值类型
+type numberType int
+
+const (
+	numberTypeInteger numberType = iota
+	numberTypeFloat
+	numberTypeNaN
+	numberTypeInfinity
+	numberTypeNegativeInfinity
+)
+
+// numberValue 表示标准化的数值
+type numberValue struct {
+	typ   numberType
+	value float64
+}
+
+// convertToNumber 将任意值转换为标准化的数值
+func convertToNumber(v interface{}) (numberValue, error) {
+	switch val := v.(type) {
+	case int:
+		return numberValue{typ: numberTypeInteger, value: float64(val)}, nil
+	case int32:
+		return numberValue{typ: numberTypeInteger, value: float64(val)}, nil
+	case int64:
+		return numberValue{typ: numberTypeInteger, value: float64(val)}, nil
+	case float32:
+		if isNaN32(float32(val)) {
+			return numberValue{typ: numberTypeNaN}, nil
+		}
+		if isInf32(float32(val), 1) {
+			return numberValue{typ: numberTypeInfinity}, nil
+		}
+		if isInf32(float32(val), -1) {
+			return numberValue{typ: numberTypeNegativeInfinity}, nil
+		}
+		return numberValue{typ: numberTypeFloat, value: float64(val)}, nil
+	case float64:
+		if math.IsNaN(val) {
+			return numberValue{typ: numberTypeNaN}, nil
+		}
+		if math.IsInf(val, 1) {
+			return numberValue{typ: numberTypeInfinity}, nil
+		}
+		if math.IsInf(val, -1) {
+			return numberValue{typ: numberTypeNegativeInfinity}, nil
+		}
+		if val == float64(int64(val)) {
+			return numberValue{typ: numberTypeInteger, value: val}, nil
+		}
+		return numberValue{typ: numberTypeFloat, value: val}, nil
+	case json.Number:
+		if f, err := val.Float64(); err == nil {
+			return convertToNumber(f)
+		}
+		if i, err := val.Int64(); err == nil {
+			return numberValue{typ: numberTypeInteger, value: float64(i)}, nil
+		}
+		return numberValue{}, fmt.Errorf("invalid number: %v", val)
+	case string:
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			return convertToNumber(f)
+		}
+		return numberValue{}, fmt.Errorf("invalid number string: %v", val)
+	default:
+		return numberValue{}, fmt.Errorf("cannot convert to number: %v", v)
+	}
+}
+
+// compareNumberValues 比较两个数值
+func compareNumberValues(a, b numberValue) int {
+	// 处理特殊值
+	if a.typ == numberTypeNaN || b.typ == numberTypeNaN {
+		return 0 // NaN 等于 NaN，不等于其他任何值
+	}
+	if a.typ == numberTypeInfinity {
+		if b.typ == numberTypeInfinity {
+			return 0
+		}
+		return 1
+	}
+	if a.typ == numberTypeNegativeInfinity {
+		if b.typ == numberTypeNegativeInfinity {
+			return 0
+		}
+		return -1
+	}
+	if b.typ == numberTypeInfinity {
+		return -1
+	}
+	if b.typ == numberTypeNegativeInfinity {
+		return 1
+	}
+
+	// 处理普通数值
+	diff := a.value - b.value
+	if math.Abs(diff) < 1e-10 { // 使用精度阈值处理浮点数比较
+		return 0
+	}
+	if diff > 0 {
+		return 1
+	}
+	return -1
+}
+
+// formatNumber 格式化数值输出
+func formatNumber(n numberValue) string {
+	switch n.typ {
+	case numberTypeNaN:
+		return "NaN"
+	case numberTypeInfinity:
+		return "Infinity"
+	case numberTypeNegativeInfinity:
+		return "-Infinity"
+	case numberTypeInteger:
+		return strconv.FormatInt(int64(n.value), 10)
+	default:
+		return strconv.FormatFloat(n.value, 'f', -1, 64)
+	}
+}
+
+// isNaN32 检查 float32 是否为 NaN
+func isNaN32(f float32) bool {
+	return f != f
+}
+
+// isInf32 检查 float32 是否为 Infinity
+func isInf32(f float32, sign int) bool {
+	return math.IsInf(float64(f), sign)
 }
 
 // globalFunctions is the registry of built-in functions
@@ -184,43 +317,37 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("min() cannot be applied to an empty array")
 			}
 
-			// 找到第一个数值作为初始值
-			var minVal float64
-			initialized := false
-
+			var minVal *numberValue
 			for _, item := range arr {
-				var num float64
-				switch v := item.(type) {
-				case float64:
-					num = v
-				case int:
-					num = float64(v)
-				case json.Number:
-					var err error
-					num, err = v.Float64()
-					if err != nil {
-						continue // 跳过无效的数值
-					}
-				default:
-					continue // 跳过非数值类型
+				num, err := convertToNumber(item)
+				if err != nil {
+					continue // 跳过无效的数值
 				}
 
-				if !initialized {
-					minVal = num
-					initialized = true
+				// 跳过 NaN
+				if num.typ == numberTypeNaN {
 					continue
 				}
 
-				if num < minVal {
-					minVal = num
+				if minVal == nil {
+					minVal = &num
+					continue
+				}
+
+				if compareNumberValues(num, *minVal) < 0 {
+					minVal = &num
 				}
 			}
 
-			if !initialized {
+			if minVal == nil {
 				return nil, fmt.Errorf("min() no valid numbers in array")
 			}
 
-			return minVal, nil
+			// 返回原始类型的值
+			if minVal.typ == numberTypeInteger {
+				return int64(minVal.value), nil
+			}
+			return minVal.value, nil
 		},
 	},
 	"max": &builtinFunction{
@@ -240,43 +367,37 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("max() cannot be applied to an empty array")
 			}
 
-			// 找到第一个数值作为初始值
-			var maxVal float64
-			initialized := false
-
+			var maxVal *numberValue
 			for _, item := range arr {
-				var num float64
-				switch v := item.(type) {
-				case float64:
-					num = v
-				case int:
-					num = float64(v)
-				case json.Number:
-					var err error
-					num, err = v.Float64()
-					if err != nil {
-						continue // 跳过无效的数值
-					}
-				default:
-					continue // 跳过非数值类型
+				num, err := convertToNumber(item)
+				if err != nil {
+					continue // 跳过无效的数值
 				}
 
-				if !initialized {
-					maxVal = num
-					initialized = true
+				// 跳过 NaN
+				if num.typ == numberTypeNaN {
 					continue
 				}
 
-				if num > maxVal {
-					maxVal = num
+				if maxVal == nil {
+					maxVal = &num
+					continue
+				}
+
+				if compareNumberValues(num, *maxVal) > 0 {
+					maxVal = &num
 				}
 			}
 
-			if !initialized {
+			if maxVal == nil {
 				return nil, fmt.Errorf("max() no valid numbers in array")
 			}
 
-			return maxVal, nil
+			// 返回原始类型的值
+			if maxVal.typ == numberTypeInteger {
+				return int64(maxVal.value), nil
+			}
+			return maxVal.value, nil
 		},
 	},
 	"avg": &builtinFunction{
@@ -296,28 +417,23 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("avg() cannot be applied to an empty array")
 			}
 
-			// 计算所有有效数值的总和和数量
 			var sum float64
 			count := 0
 
 			for _, item := range arr {
-				var num float64
-				switch v := item.(type) {
-				case float64:
-					num = v
-				case int:
-					num = float64(v)
-				case json.Number:
-					var err error
-					num, err = v.Float64()
-					if err != nil {
-						continue // 跳过无效的数值
-					}
-				default:
-					continue // 跳过非数值类型
+				num, err := convertToNumber(item)
+				if err != nil {
+					continue // 跳过无效的数值
 				}
 
-				sum += num
+				// 跳过特殊值
+				if num.typ == numberTypeNaN ||
+					num.typ == numberTypeInfinity ||
+					num.typ == numberTypeNegativeInfinity {
+					continue
+				}
+
+				sum += num.value
 				count++
 			}
 
@@ -325,7 +441,11 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("avg() no valid numbers in array")
 			}
 
-			return sum / float64(count), nil
+			result := sum / float64(count)
+			if result == float64(int64(result)) {
+				return int64(result), nil
+			}
+			return result, nil
 		},
 	},
 	"sum": &builtinFunction{
@@ -345,28 +465,28 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("sum() cannot be applied to an empty array")
 			}
 
-			// 计算所有有效数值的总和
 			var sum float64
 			count := 0
+			allIntegers := true
 
 			for _, item := range arr {
-				var num float64
-				switch v := item.(type) {
-				case float64:
-					num = v
-				case int:
-					num = float64(v)
-				case json.Number:
-					var err error
-					num, err = v.Float64()
-					if err != nil {
-						continue // 跳过无效的数值
-					}
-				default:
-					continue // 跳过非数值类型
+				num, err := convertToNumber(item)
+				if err != nil {
+					continue // 跳过无效的数值
 				}
 
-				sum += num
+				// 跳过特殊值
+				if num.typ == numberTypeNaN ||
+					num.typ == numberTypeInfinity ||
+					num.typ == numberTypeNegativeInfinity {
+					continue
+				}
+
+				if num.typ == numberTypeFloat {
+					allIntegers = false
+				}
+
+				sum += num.value
 				count++
 			}
 
@@ -374,6 +494,10 @@ var globalFunctions = map[string]Function{
 				return nil, fmt.Errorf("sum() no valid numbers in array")
 			}
 
+			// 如果所有数都是整数且结果也是整数，返回整数类型
+			if allIntegers && sum == float64(int64(sum)) {
+				return int64(sum), nil
+			}
 			return sum, nil
 		},
 	},
@@ -485,44 +609,125 @@ var globalFunctions = map[string]Function{
 	"search": &builtinFunction{
 		name: "search",
 		callback: func(args []interface{}) (interface{}, error) {
+			// 1. 验证参数数量
 			if len(args) != 2 {
 				return nil, fmt.Errorf("search() requires exactly 2 arguments")
 			}
 
-			// 获取数组参数
+			// 2. 获取数组参数
 			arr, ok := args[0].([]interface{})
 			if !ok {
 				return nil, fmt.Errorf("first argument must be an array")
 			}
 
-			// 获取正则表达式参数
+			// 3. 获取正则表达式参数
 			pattern, ok := args[1].(string)
 			if !ok {
 				return nil, fmt.Errorf("second argument must be a string pattern")
 			}
 
-			// 处理转义字符
-			pattern = strings.ReplaceAll(pattern, "\\\\", "\\")
+			// 4. 处理转义字符
+			var result strings.Builder
+			var escaped bool
+			var inCharClass bool
 
-			// 编译正则表达式
-			re, err := regexp.Compile(pattern)
+			for i := 0; i < len(pattern); i++ {
+				ch := pattern[i]
+				if escaped {
+					switch ch {
+					case 'd', 'D', 'w', 'W', 's', 'S', 'b', 'B':
+						// 保持原样的特殊字符序列
+						result.WriteByte('\\')
+						result.WriteByte(ch)
+					case 'n':
+						result.WriteString(`\n`)
+					case 'r':
+						result.WriteString(`\r`)
+					case 't':
+						result.WriteString(`\t`)
+					case '[', ']', '(', ')', '{', '}', '\\', '.', '*', '+', '?', '|', '^', '$':
+						// 转义元字符
+						result.WriteByte(ch)
+					case 'p', 'P':
+						// 处理 Unicode 属性
+						result.WriteByte('\\')
+						result.WriteByte(ch)
+						if i+1 < len(pattern) && pattern[i+1] == '{' {
+							i++ // 跳过 '{'
+							result.WriteByte('{')
+							for i+1 < len(pattern) && pattern[i+1] != '}' {
+								i++
+								result.WriteByte(pattern[i])
+							}
+							if i+1 < len(pattern) && pattern[i+1] == '}' {
+								i++
+								result.WriteByte('}')
+							}
+						}
+					default:
+						if inCharClass {
+							result.WriteByte(ch)
+						} else {
+							result.WriteByte(ch)
+						}
+					}
+					escaped = false
+				} else if ch == '\\' {
+					escaped = true
+				} else if ch == '[' {
+					inCharClass = true
+					result.WriteByte(ch)
+				} else if ch == ']' {
+					inCharClass = false
+					result.WriteByte(ch)
+				} else {
+					result.WriteByte(ch)
+				}
+			}
+
+			// 处理末尾的反斜杠
+			if escaped {
+				result.WriteByte('\\')
+			}
+
+			pattern = result.String()
+
+			// 5. 获取或编译正则表达式
+			re, err := getCompiledRegex(pattern)
 			if err != nil {
 				return nil, fmt.Errorf("invalid regular expression: %v", err)
 			}
 
-			// 搜索匹配的元素
-			result := make([]interface{}, 0) // 初始化为空切片而不是 nil
+			// 6. 搜索匹配的元素
+			matches := make([]interface{}, 0)
 			for _, item := range arr {
-				str, ok := item.(string)
-				if !ok {
-					continue // 跳过非字符串元素
+				var str string
+				switch v := item.(type) {
+				case string:
+					str = v
+				case float64:
+					str = strconv.FormatFloat(v, 'f', -1, 64)
+				case int:
+					str = strconv.Itoa(v)
+				case bool:
+					str = strconv.FormatBool(v)
+				case nil:
+					str = "null"
+				default:
+					// 尝试将其他类型转换为 JSON 字符串
+					if jsonBytes, err := json.Marshal(v); err == nil {
+						str = string(jsonBytes)
+					} else {
+						continue // 跳过无法转换的值
+					}
 				}
+
 				if re.MatchString(str) {
-					result = append(result, str)
+					matches = append(matches, item) // 保持原始值类型
 				}
 			}
 
-			return result, nil
+			return matches, nil
 		},
 	},
 }

@@ -641,40 +641,65 @@ func (s *functionSegment) evaluate(value interface{}) ([]interface{}, error) {
 		return nil, err
 	}
 
-	// 如果没有参数，使用当前值为参数
+	// 准备函数参数
+	var args []interface{}
 	if len(s.args) == 0 {
-		s.args = []interface{}{value}
+		// 如果没有参数，使用当前值作为唯一参数
+		args = []interface{}{value}
+	} else {
+		// 如果有参数，直接使用提供的参数
+		args = s.args
 	}
 
 	// 调用函数
-	result, err := fn.Call(s.args)
+	result, err := fn.Call(args)
 	if err != nil {
 		return nil, err
 	}
 
+	// 将结果包装在数组中返回
+	if result == nil {
+		return nil, nil
+	}
+
+	// 处理数值类型转换
+	switch v := result.(type) {
+	case int:
+		result = float64(v)
+	case int32:
+		result = float64(v)
+	case int64:
+		result = float64(v)
+	case float32:
+		result = float64(v)
+	}
+
+	// 如果结果已经是数组，直接返回
+	if arr, ok := result.([]interface{}); ok {
+		return arr, nil
+	}
+
+	// 将单个值包装在数组中返回
 	return []interface{}{result}, nil
 }
 
-// String returns the string representation of the function segment
 func (s *functionSegment) String() string {
-	var result strings.Builder
-	result.WriteString(s.name)
-	result.WriteString("(")
-
+	args := make([]string, len(s.args))
 	for i, arg := range s.args {
-		if i > 0 {
-			result.WriteString(",")
-		}
 		switch v := arg.(type) {
 		case string:
-			result.WriteString("'")
-			result.WriteString(v)
-			result.WriteString("'")
+			args[i] = fmt.Sprintf("'%s'", v)
 		case float64:
-			result.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
+			args[i] = strconv.FormatFloat(v, 'f', -1, 64)
+		case int:
+			args[i] = strconv.Itoa(v)
+		case bool:
+			args[i] = strconv.FormatBool(v)
+		case nil:
+			args[i] = "null"
+		default:
+			args[i] = fmt.Sprintf("%v", v)
 		}
 	}
-
-	result.WriteString(")")
-	return result.String()
+	return fmt.Sprintf("%s(%s)", s.name, strings.Join(args, ","))
 }
