@@ -48,6 +48,13 @@ jobs:
       - name: Run benchmarks
         run: go test -v -run=^$ -bench=. -benchmem ./...
 
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2.3.4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path-to-lcov: coverage.txt
+          format: golang
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
