@@ -91,10 +91,10 @@ func convertToNumber(v interface{}) (numberValue, error) {
 			return numberValue{typ: numberTypeNaN}, nil
 		}
 		if isInf32(float32(val), 1) {
-			return numberValue{typ: numberTypeInfinity}, nil
+			return numberValue{typ: numberTypeInfinity, value: 1}, nil
 		}
 		if isInf32(float32(val), -1) {
-			return numberValue{typ: numberTypeNegativeInfinity}, nil
+			return numberValue{typ: numberTypeNegativeInfinity, value: -1}, nil
 		}
 		return numberValue{typ: numberTypeFloat, value: float64(val)}, nil
 	case float64:
@@ -102,10 +102,10 @@ func convertToNumber(v interface{}) (numberValue, error) {
 			return numberValue{typ: numberTypeNaN}, nil
 		}
 		if math.IsInf(val, 1) {
-			return numberValue{typ: numberTypeInfinity}, nil
+			return numberValue{typ: numberTypeInfinity, value: 1}, nil
 		}
 		if math.IsInf(val, -1) {
-			return numberValue{typ: numberTypeNegativeInfinity}, nil
+			return numberValue{typ: numberTypeNegativeInfinity, value: -1}, nil
 		}
 		if val == float64(int64(val)) {
 			return numberValue{typ: numberTypeInteger, value: val}, nil

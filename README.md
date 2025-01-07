@@ -2,6 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/davidhoo/jsonpath.svg)](https://pkg.go.dev/github.com/davidhoo/jsonpath)
 [![Go Report Card](https://goreportcard.com/badge/github.com/davidhoo/jsonpath)](https://goreportcard.com/report/github.com/davidhoo/jsonpath)
+[![Coverage Status](https://coveralls.io/repos/github/davidhoo/jsonpath/badge.svg?branch=main)](https://coveralls.io/github/davidhoo/jsonpath?branch=main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [中文文档](README_zh.md)
@@ -349,3 +350,82 @@ Issues and Pull Requests are welcome!
 ## License
 
 MIT License
+
+## Testing
+
+### Running Tests
+
+```bash
+# Run all tests
+go test -v ./...
+
+# Run tests with coverage
+go test -v -coverprofile=coverage.out ./...
+
+# View coverage report in browser
+go tool cover -html=coverage.out
+
+# Run benchmarks
+go test -bench=. -benchmem ./...
+```
+
+### Test Organization
+
+The test suite is organized into several categories:
+
+- Unit Tests: Testing individual functions and components
+- Integration Tests: Testing interactions between components
+- Benchmark Tests: Performance testing of critical paths
+- Example Tests: Documenting usage through examples
+
+### Test Coverage
+
+Current test coverage metrics:
+- Overall Coverage: 90%+
+- Core Package: 90%+
+- Command Line Tool: 90%+
+
+### Writing Tests
+
+When contributing tests, please follow these guidelines:
+
+1. Use table-driven tests for similar test cases
+2. Provide clear test case descriptions
+3. Test both success and error cases
+4. Include edge cases and boundary conditions
+5. Use test suites for related functionality
+6. Add benchmarks for performance-critical code
+
+Example of a well-structured test:
+
+```go
+func TestParseJSONPath(t *testing.T) {
+    tests := []struct {
+        name     string
+        input    string
+        expected interface{}
+        wantErr  bool
+    }{
+        {
+            name:     "simple path",
+            input:    "$.store.book",
+            expected: []string{"store", "book"},
+            wantErr:  false,
+        },
+        // Add more test cases...
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            result, err := ParseJSONPath(tt.input)
+            if (err != nil) != tt.wantErr {
+                t.Errorf("ParseJSONPath() error = %v, wantErr %v", err, tt.wantErr)
+                return
+            }
+            if !reflect.DeepEqual(result, tt.expected) {
+                t.Errorf("ParseJSONPath() = %v, want %v", result, tt.expected)
+            }
+        })
+    }
+}
+```

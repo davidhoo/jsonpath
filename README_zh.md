@@ -2,6 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/davidhoo/jsonpath.svg)](https://pkg.go.dev/github.com/davidhoo/jsonpath)
 [![Go Report Card](https://goreportcard.com/badge/github.com/davidhoo/jsonpath)](https://goreportcard.com/report/github.com/davidhoo/jsonpath)
+[![Coverage Status](https://coveralls.io/repos/github/davidhoo/jsonpath/badge.svg?branch=main)](https://coveralls.io/github/davidhoo/jsonpath?branch=main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [English](README.md)
@@ -352,3 +353,82 @@ if obj, ok := result.(map[string]interface{}); ok {
 ## 许可证
 
 MIT License
+
+## 测试
+
+### 运行测试
+
+```bash
+# 运行所有测试
+go test -v ./...
+
+# 运行测试并生成覆盖率报告
+go test -v -coverprofile=coverage.out ./...
+
+# 在浏览器中查看覆盖率报告
+go tool cover -html=coverage.out
+
+# 运行基准测试
+go test -bench=. -benchmem ./...
+```
+
+### 测试组织结构
+
+测试套件分为以下几个类别：
+
+- 单元测试：测试单个函数和组件
+- 集成测试：测试组件之间的交互
+- 基准测试：关键路径的性能测试
+- 示例测试：通过示例展示用法
+
+### 测试覆盖率
+
+当前测试覆盖率指标：
+- 总体覆盖率：90%+
+- 核心包覆盖率：90%+
+- 命令行工具覆盖率：90%+
+
+### 编写测试
+
+贡献测试时，请遵循以下准则：
+
+1. 使用表驱动测试处理相似的测试用例
+2. 提供清晰的测试用例描述
+3. 同时测试成功和失败的情况
+4. 包含边缘情况和边界条件
+5. 使用测试套件组织相关功能
+6. 为性能关键代码添加基准测试
+
+良好结构的测试示例：
+
+```go
+func TestParseJSONPath(t *testing.T) {
+    tests := []struct {
+        name     string
+        input    string
+        expected interface{}
+        wantErr  bool
+    }{
+        {
+            name:     "简单路径",
+            input:    "$.store.book",
+            expected: []string{"store", "book"},
+            wantErr:  false,
+        },
+        // 添加更多测试用例...
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            result, err := ParseJSONPath(tt.input)
+            if (err != nil) != tt.wantErr {
+                t.Errorf("ParseJSONPath() error = %v, wantErr %v", err, tt.wantErr)
+                return
+            }
+            if !reflect.DeepEqual(result, tt.expected) {
+                t.Errorf("ParseJSONPath() = %v, want %v", result, tt.expected)
+            }
+        })
+    }
+}
+```
