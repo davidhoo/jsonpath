@@ -4,6 +4,8 @@ on:
   push:
     branches: 
       - main
+    tags:
+      - 'v*'
   pull_request:
     branches: 
       - main
@@ -14,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.19', '1.20', '1.21.x']
+        go-version: ['1.22.x', '1.22.0']
 
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +26,16 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Go Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
       - name: Install dependencies
         run: go mod download
 
@@ -32,6 +44,9 @@ jobs:
 
       - name: Test with coverage
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Run benchmarks
+        run: go test -v -run=^$ -bench=. -benchmem ./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
@@ -50,13 +65,15 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21.x'
+          go-version: '1.22.x'
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
           version: latest
           args: --timeout=5m
+          skip-pkg-cache: false
+          skip-build-cache: false
 
   security:
     name: Security Check
@@ -67,9 +84,39 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21.x'
+          go-version: '1.22.x'
 
       - name: Run gosec Security Scanner
         uses: securego/gosec@master
         with:
-          args: ./... 
+          args: ./...
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  release:
+    name: Release
+    needs: [build, lint, security]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22.x'
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
