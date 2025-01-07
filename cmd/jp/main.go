@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode"
@@ -379,7 +380,23 @@ func readInput(file string) (string, error) {
 	if file == "" {
 		input, err = io.ReadAll(os.Stdin)
 	} else {
-		input, err = os.ReadFile(file)
+		// 验证文件路径
+		cleanPath := filepath.Clean(file)
+		if !filepath.IsAbs(cleanPath) {
+			// 如果是相对路径，转换为绝对路径
+			cleanPath, err = filepath.Abs(cleanPath)
+			if err != nil {
+				return "", fmt.Errorf("%s: %v", errorColor("error processing file path"), err)
+			}
+		}
+
+		// 检查路径是否包含 .. 序列
+		if strings.Contains(cleanPath, "..") {
+			return "", fmt.Errorf("%s: path contains parent directory reference", errorColor("error: invalid path"))
+		}
+
+		// 读取文件
+		input, err = os.ReadFile(cleanPath)
 	}
 	if err != nil {
 		return "", fmt.Errorf("%s: %v", errorColor("error reading input"), err)
