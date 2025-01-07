@@ -244,7 +244,9 @@ func TestNoInputShowsHelp(t *testing.T) {
 
 	// 读取输出
 	var output strings.Builder
-	io.Copy(&output, r)
+	if _, err := io.Copy(&output, r); err != nil {
+		t.Fatalf("Failed to read output: %v", err)
+	}
 	<-exit
 
 	// 检查输出是否包含帮助信息的关键部分
@@ -268,7 +270,9 @@ func TestPrintVersion(t *testing.T) {
 
 	// 读取捕获的输出
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("Failed to read output: %v", err)
+	}
 	output := buf.String()
 
 	// 验证输出包含版本信息
@@ -346,7 +350,9 @@ func TestOutputResult(t *testing.T) {
 
 			// 读取捕获的输出
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			if _, err := io.Copy(&buf, r); err != nil {
+				t.Fatalf("Failed to read output: %v", err)
+			}
 			output := buf.String()
 
 			// 验证错误

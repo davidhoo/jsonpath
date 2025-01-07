@@ -611,39 +611,9 @@ func normalizeNumbers(value1, value2 interface{}) (float64, float64, bool) {
 	return num1, num2, ok1 && ok2
 }
 
-// compareNumbers compares two numbers using the specified operator
-func compareNumbers(a float64, operator string, b float64) bool {
-	switch operator {
-	case "==":
-		return a == b
-	case "!=":
-		return a != b
-	case "<":
-		return a < b
-	case "<=":
-		return a <= b
-	case ">":
-		return a > b
-	case ">=":
-		return a >= b
-	}
-	return false
-}
-
 // compareStrings compares two strings using the specified operator
 func compareStrings(a string, operator string, b string) bool {
 	return standardCompareStrings(a, operator, b)
-}
-
-// compareBooleans compares two booleans using the specified operator
-func compareBooleans(a bool, operator string, b bool) bool {
-	switch operator {
-	case "==":
-		return a == b
-	case "!=":
-		return a != b
-	}
-	return false
 }
 
 // getFieldValue 获取对象中指定字段的值

@@ -110,6 +110,8 @@ func TestMapToArray(t *testing.T) {
 }
 
 // toString 将任意值转换为字符串以便比较
+//
+//nolint:unused
 func toString(v interface{}) string {
 	switch val := v.(type) {
 	case string:
@@ -879,7 +881,7 @@ func TestGetArrayElements(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := getArrayElements(tt.arr, tt.indices)
 			if tt.want == nil {
-				if got != nil && len(got) != 0 {
+				if len(got) != 0 {
 					t.Errorf("getArrayElements() = %v, want nil or empty slice", got)
 				}
 			} else if !reflect.DeepEqual(got, tt.want) {
@@ -996,7 +998,7 @@ func TestSliceSegmentEvaluate(t *testing.T) {
 			}
 			if !tt.wantErr {
 				if tt.want == nil {
-					if got != nil && len(got) != 0 {
+					if len(got) != 0 {
 						t.Errorf("sliceSegment.evaluate() = %v, want nil or empty slice", got)
 					}
 				} else if !reflect.DeepEqual(got, tt.want) {
@@ -1174,7 +1176,7 @@ func TestMultiIndexSegmentEvaluate(t *testing.T) {
 			}
 			if !tt.wantErr {
 				if tt.want == nil {
-					if got != nil && len(got) != 0 {
+					if len(got) != 0 {
 						t.Errorf("multiIndexSegment.evaluate() = %v, want nil or empty slice", got)
 					}
 				} else if !reflect.DeepEqual(got, tt.want) {
@@ -1607,7 +1609,7 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 			}
 			if !tt.wantErr {
 				if tt.want == nil {
-					if got != nil && len(got) != 0 {
+					if len(got) != 0 {
 						t.Errorf("filterSegment.evaluate() = %v, want nil or empty slice", got)
 					}
 				} else if !reflect.DeepEqual(got, tt.want) {
