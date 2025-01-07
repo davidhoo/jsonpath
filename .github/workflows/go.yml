@@ -48,14 +48,6 @@ jobs:
       - name: Run benchmarks
         run: go test -v -run=^$ -bench=. -benchmem ./...
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.txt
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: true
-
   lint:
     name: Lint
     runs-on: ubuntu-latest
