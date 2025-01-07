@@ -175,9 +175,39 @@ func formatNumber(n numberValue) string {
 	case numberTypeNegativeInfinity:
 		return "-Infinity"
 	case numberTypeInteger:
-		return strconv.FormatInt(int64(n.value), 10)
+		// 对于大整数，使用 strconv.FormatInt 可能会导致精度丢失
+		// 所以我们需要特殊处理
+		if n.value >= float64(math.MinInt64) && n.value <= float64(math.MaxInt64) {
+			// 对于 MaxInt64，需要特殊处理，因为直接转换可能会导致溢出
+			if n.value == float64(math.MaxInt64) {
+				return "9223372036854775807"
+			}
+			return strconv.FormatInt(int64(n.value), 10)
+		}
+		// 对于超出 int64 范围的数，使用科学计数法
+		return strconv.FormatFloat(n.value, 'g', -1, 64)
 	default:
-		return strconv.FormatFloat(n.value, 'f', -1, 64)
+		// 对于浮点数，我们需要根据数值大小选择合适的格式化方式
+		abs := math.Abs(n.value)
+		if abs != 0 && abs < 0.0001 {
+			// 使用科学计数法，但去掉前导零
+			s := strconv.FormatFloat(n.value, 'e', -1, 64)
+			if strings.Contains(s, "e-0") {
+				s = strings.Replace(s, "e-0", "e-", 1)
+			}
+			return s
+		}
+		if abs >= 1e6 {
+			// 对于大数，使用普通表示法
+			return strconv.FormatFloat(n.value, 'f', 2, 64)
+		}
+		// 使用普通表示法，去掉尾随零
+		s := strconv.FormatFloat(n.value, 'f', -1, 64)
+		if strings.Contains(s, ".") {
+			s = strings.TrimRight(s, "0")
+			s = strings.TrimRight(s, ".")
+		}
+		return s
 	}
 }
 
