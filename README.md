@@ -35,6 +35,16 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
 
 ## What's New
 
+### v2.0.1
+- Bug fixes and improvements
+  - Fixed minor issues from the initial 2.0.0 release
+  - Improved error handling and reporting
+  - Performance optimizations
+- Documentation updates
+  - Updated examples to reflect latest API changes
+  - Enhanced documentation clarity
+  - Fixed typos and inconsistencies
+
 ### v2.0.0
 - Complete rewrite with RFC 9535 compliance
   - Full implementation of JSONPath specification (RFC 9535)
