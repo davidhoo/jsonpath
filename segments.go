@@ -703,3 +703,34 @@ func (s *functionSegment) String() string {
 	}
 	return fmt.Sprintf("%s(%s)", s.name, strings.Join(args, ","))
 }
+
+// 多字段段
+type multiNameSegment struct {
+	names []string
+}
+
+func (s *multiNameSegment) evaluate(value interface{}) ([]interface{}, error) {
+	obj, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("multi-name can only be applied to object")
+	}
+
+	var result []interface{}
+
+	for _, name := range s.names {
+		// 获取字段值
+		if val, exists := obj[name]; exists {
+			result = append(result, val)
+		}
+	}
+
+	return result, nil
+}
+
+func (s *multiNameSegment) String() string {
+	names := make([]string, len(s.names))
+	for i, name := range s.names {
+		names[i] = fmt.Sprintf("'%s'", name)
+	}
+	return fmt.Sprintf("[%s]", strings.Join(names, ","))
+}

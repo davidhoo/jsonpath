@@ -153,8 +153,10 @@ func parseBracketSegment(content string) (segment, error) {
 		return parseFilterSegment(content[1:])
 	}
 
-	// 处理多索引选择
-	if strings.Contains(content, ",") {
+	// 处理多索引选择或多字段选择
+	if strings.Contains(content, ",") ||
+		((strings.HasPrefix(content, "'") && strings.HasSuffix(content, "'")) && strings.Contains(content[1:len(content)-1], "','")) ||
+		((strings.HasPrefix(content, "\"") && strings.HasSuffix(content, "\"")) && strings.Contains(content[1:len(content)-1], "\",\"")) {
 		return parseMultiIndexSegment(content)
 	}
 
@@ -649,15 +651,131 @@ func getFieldValue(obj interface{}, field string) (interface{}, error) {
 	return current, nil
 }
 
+// isValidIdentifier 检查字符串是否是有效的标识符
+func isValidIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	// 检查第一个字符是否是字母或下划线
+	first := s[0]
+	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_') {
+		return false
+	}
+
+	// 检查其余字符是否是字母、数字或下划线
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+
+	return true
+}
+
 // 解析多索引选择
 func parseMultiIndexSegment(content string) (segment, error) {
-	parts := strings.Split(content, ",")
-	indices := make([]int, 0, len(parts))
+	// 检查前导和尾随逗号
+	if strings.HasPrefix(content, ",") {
+		return nil, NewError(ErrInvalidPath, "leading comma in multi-index segment", content)
+	}
+	if strings.HasSuffix(content, ",") {
+		return nil, NewError(ErrInvalidPath, "trailing comma in multi-index segment", content)
+	}
 
+	parts := strings.Split(content, ",")
+
+	// 检查空索引
 	for _, part := range parts {
-		idx, err := strconv.Atoi(strings.TrimSpace(part))
+		if strings.TrimSpace(part) == "" {
+			return nil, NewError(ErrInvalidPath, "empty index in multi-index segment", content)
+		}
+	}
+
+	// 检查是否包含字符串字段名
+	// 检查是否包含字符串字段名
+	hasString := false
+	hasQuotedString := false
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		// 检查是否是字符串字段名（带引号）
+		if (strings.HasPrefix(trimmed, "'") && strings.HasSuffix(trimmed, "'")) ||
+			(strings.HasPrefix(trimmed, "\"") && strings.HasSuffix(trimmed, "\"")) {
+			hasString = true
+			hasQuotedString = true
+			break
+		}
+		// 检查是否是非数字的字段名
+		if _, err := strconv.Atoi(trimmed); err != nil {
+			// 如果不是带引号的字符串，但也不是数字，可能是无效索引或不带引号的字段名
+			// 我们需要进一步判断
+			hasString = true
+			break
+		}
+	}
+
+	// 如果有引号字符串，或者所有非数字部分都是有效的字段名，则作为多字段段处理
+	if hasString && hasQuotedString {
+		// 有引号字符串，按多字段段处理
+		names := make([]string, 0, len(parts))
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			// 处理带引号的字符串
+			if (strings.HasPrefix(trimmed, "'") && strings.HasSuffix(trimmed, "'")) ||
+				(strings.HasPrefix(trimmed, "\"") && strings.HasSuffix(trimmed, "\"")) {
+				names = append(names, trimmed[1:len(trimmed)-1])
+			} else {
+				// 处理不带引号的字段名
+				names = append(names, trimmed)
+			}
+		}
+		return &multiNameSegment{names: names}, nil
+	}
+
+	// 检查是否所有部分都是有效的字段名（不带引号但也不是纯数字）
+	if hasString && !hasQuotedString {
+		// 检查是否所有部分都是数字或者所有部分都是有效的标识符
+		allNumbers := true
+		allValidNames := true
+
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if _, err := strconv.Atoi(trimmed); err != nil {
+				// 不是数字
+				allNumbers = false
+				if !isValidIdentifier(trimmed) {
+					allValidNames = false
+				}
+			} else {
+				// 是数字，但在混合情况下不应该作为字段名
+				allValidNames = false
+			}
+		}
+
+		// 如果混合了数字和非数字，这是无效的
+		if !allNumbers && !allValidNames {
+			return nil, NewError(ErrInvalidPath, "cannot mix numeric indices and field names", content)
+		}
+
+		if allValidNames {
+			// 所有部分都是有效标识符，按多字段段处理
+			names := make([]string, 0, len(parts))
+			for _, part := range parts {
+				trimmed := strings.TrimSpace(part)
+				names = append(names, trimmed)
+			}
+			return &multiNameSegment{names: names}, nil
+		}
+	}
+
+	// 否则解析为多索引段
+	indices := make([]int, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		idx, err := strconv.Atoi(trimmed)
 		if err != nil {
-			return nil, fmt.Errorf("invalid index: %s", part)
+			return nil, NewError(ErrInvalidPath, fmt.Sprintf("invalid index: %s", trimmed), content)
 		}
 		indices = append(indices, idx)
 	}
@@ -721,6 +839,11 @@ func parseIndexOrName(content string) (segment, error) {
 
 	// 处理字符串字面量
 	if strings.HasPrefix(content, "'") && strings.HasSuffix(content, "'") && len(content) > 1 {
+		return &nameSegment{name: content[1 : len(content)-1]}, nil
+	}
+
+	// 处理双引号字符串字面量
+	if strings.HasPrefix(content, "\"") && strings.HasSuffix(content, "\"") && len(content) > 1 {
 		return &nameSegment{name: content[1 : len(content)-1]}, nil
 	}
 

@@ -992,3 +992,82 @@ func TestSearchFunction(t *testing.T) {
 		})
 	}
 }
+
+func TestMultiFieldExtraction(t *testing.T) {
+	// 测试数据
+	jsonData := `{
+		"star": {
+			"name": "Sun",
+			"diameter": 1391016,
+			"age": null,
+			"planets": [
+				{
+					"name": "Mercury",
+					"Number of Moons": "0",
+					"diameter": 4879,
+					"has-moons": false
+				},
+				{
+					"name": "Venus",
+					"Number of Moons": "0",
+					"diameter": 12104,
+					"has-moons": false
+				},
+				{
+					"name": "Earth",
+					"Number of Moons": "1",
+					"diameter": 12756,
+					"has-moons": true
+				},
+				{
+					"name": "Mars",
+					"Number of Moons": "2",
+					"diameter": 6792,
+					"has-moons": true
+				}
+			]
+		}
+	}`
+
+	testCases := []struct {
+		name     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name:     "extract multiple fields from objects",
+			path:     "$.star.planets.*['name','diameter']",
+			expected: []interface{}{"Mercury", float64(4879), "Venus", float64(12104), "Earth", float64(12756), "Mars", float64(6792)},
+		},
+		{
+			name:     "extract multiple fields with wildcard",
+			path:     "$.star.planets[*]['name','has-moons']",
+			expected: []interface{}{"Mercury", false, "Venus", false, "Earth", true, "Mars", true},
+		},
+		{
+			name:     "extract single field",
+			path:     "$.star.planets[*]['name']",
+			expected: []interface{}{"Mercury", "Venus", "Earth", "Mars"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(jsonData, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}

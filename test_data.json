@@ -1,0 +1,33 @@
+{
+  "star": {
+    "name": "Sun",
+    "diameter": 1391016,
+    "age": null,
+    "planets": [
+      {
+        "name": "Mercury",
+        "Number of Moons": "0",
+        "diameter": 4879,
+        "has-moons": false
+      },
+      {
+        "name": "Venus",
+        "Number of Moons": "0",
+        "diameter": 12104,
+        "has-moons": false
+      },
+      {
+        "name": "Earth",
+        "Number of Moons": "1",
+        "diameter": 12756,
+        "has-moons": true
+      },
+      {
+        "name": "Mars",
+        "Number of Moons": "2",
+        "diameter": 6792,
+        "has-moons": true
+      }
+    ]
+  }
+}
