@@ -19,6 +19,7 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
   - Array slices (`[start:end:step]`)
   - Array wildcards (`[*]`)
   - Multiple indices (`[1,2,3]`)
+  - Multiple field names (`['name','age']`)
   - Filter expressions (`[?(@.price < 10)]`)
 - Command Line Tool (`jp`)
   - Beautiful colorized output
@@ -44,6 +45,17 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
   - Updated examples to reflect latest API changes
   - Enhanced documentation clarity
   - Fixed typos and inconsistencies
+
+### v2.1.0 (Upcoming)
+- New Features
+  - Support for multiple field name extraction (`['name','age']`)
+  - Enhanced array indexing with mixed field types
+- Improvements
+  - Better error handling for multi-field expressions
+  - Performance optimizations for complex queries
+- Documentation
+  - Added examples for multi-field extraction
+  - Updated feature list to include multi-field support
 
 ### v2.0.0
 - Complete rewrite with RFC 9535 compliance
@@ -294,6 +306,12 @@ func main() {
 
 // Search for books with titles starting with 'S'
 "$.store.book[*].title.search('^S.*')"
+
+// Extract multiple fields from objects
+"$.store.book[*]['author','price']"
+
+// Extract multiple fields with wildcard
+"$.store.book[*]['title','category']"
 
 // Chain multiple functions
 "$.store.book[?@.price > 10].title.length()"

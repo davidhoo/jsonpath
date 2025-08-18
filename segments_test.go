@@ -1187,6 +1187,117 @@ func TestMultiIndexSegmentEvaluate(t *testing.T) {
 	}
 }
 
+func TestMultiNameSegmentEvaluate(t *testing.T) {
+	tests := []struct {
+		name    string
+		segment *multiNameSegment
+		value   interface{}
+		want    []interface{}
+		wantErr bool
+	}{
+		{
+			name: "simple names",
+			segment: &multiNameSegment{
+				names: []string{"name", "age"},
+			},
+			value: map[string]interface{}{
+				"name": "John",
+				"age":  30,
+				"city": "New York",
+			},
+			want:    []interface{}{"John", 30},
+			wantErr: false,
+		},
+		{
+			name: "missing field",
+			segment: &multiNameSegment{
+				names: []string{"name", "salary"},
+			},
+			value: map[string]interface{}{
+				"name": "John",
+				"age":  30,
+			},
+			want:    []interface{}{"John"},
+			wantErr: false,
+		},
+		{
+			name: "empty names",
+			segment: &multiNameSegment{
+				names: []string{},
+			},
+			value: map[string]interface{}{
+				"name": "John",
+				"age":  30,
+			},
+			want:    nil,
+			wantErr: false,
+		},
+		{
+			name: "duplicate names",
+			segment: &multiNameSegment{
+				names: []string{"name", "name", "age"},
+			},
+			value: map[string]interface{}{
+				"name": "John",
+				"age":  30,
+			},
+			want:    []interface{}{"John", "John", 30},
+			wantErr: false,
+		},
+		{
+			name: "non-object value",
+			segment: &multiNameSegment{
+				names: []string{"name", "age"},
+			},
+			value:   "not an object",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "nil value",
+			segment: &multiNameSegment{
+				names: []string{"name", "age"},
+			},
+			value:   nil,
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "mixed value types",
+			segment: &multiNameSegment{
+				names: []string{"name", "age", "active", "score"},
+			},
+			value: map[string]interface{}{
+				"name":   "John",
+				"age":    30,
+				"active": true,
+				"score":  95.5,
+			},
+			want:    []interface{}{"John", 30, true, 95.5},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.segment.evaluate(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("multiNameSegment.evaluate() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if tt.want == nil {
+					if len(got) != 0 {
+						t.Errorf("multiNameSegment.evaluate() = %v, want nil or empty slice", got)
+					}
+				} else if !reflect.DeepEqual(got, tt.want) {
+					t.Errorf("multiNameSegment.evaluate() = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
 func TestFunctionSegmentEvaluate(t *testing.T) {
 	tests := []struct {
 		name    string

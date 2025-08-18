@@ -99,7 +99,7 @@ func TestParseMultiIndexSegment(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
-		want    *multiIndexSegment
+		want    segment
 		wantErr bool
 	}{
 		{
@@ -151,6 +151,36 @@ func TestParseMultiIndexSegment(t *testing.T) {
 			name:    "leading comma",
 			content: ",1,2",
 			wantErr: true,
+		},
+		{
+			name:    "single quoted name",
+			content: "'name'",
+			want:    &multiNameSegment{names: []string{"name"}},
+			wantErr: false,
+		},
+		{
+			name:    "multiple quoted names",
+			content: "'name','age'",
+			want:    &multiNameSegment{names: []string{"name", "age"}},
+			wantErr: false,
+		},
+		{
+			name:    "mixed quoted names and indices",
+			content: "'name',1,'age'",
+			want:    &multiNameSegment{names: []string{"name", "1", "age"}},
+			wantErr: false,
+		},
+		{
+			name:    "unquoted names",
+			content: "name,age",
+			want:    &multiNameSegment{names: []string{"name", "age"}},
+			wantErr: false,
+		},
+		{
+			name:    "quoted names with spaces",
+			content: "'first name','last name'",
+			want:    &multiNameSegment{names: []string{"first name", "last name"}},
+			wantErr: false,
 		},
 	}
 
@@ -616,6 +646,44 @@ func TestParseIndexOrName(t *testing.T) {
 		{
 			name:      "quoted string with unicode",
 			content:   "'你好'",
+			wantType:  "nameSegment",
+			wantValue: "你好",
+		},
+
+		// 双引号字符串字面量
+		{
+			name:      "double quoted string",
+			content:   "\"hello\"",
+			wantType:  "nameSegment",
+			wantValue: "hello",
+		},
+		{
+			name:      "empty double quoted string",
+			content:   "\"\"",
+			wantType:  "nameSegment",
+			wantValue: "",
+		},
+		{
+			name:      "double quoted string with spaces",
+			content:   "\"hello world\"",
+			wantType:  "nameSegment",
+			wantValue: "hello world",
+		},
+		{
+			name:      "double quoted string with special characters",
+			content:   "\"Number of Moons\"",
+			wantType:  "nameSegment",
+			wantValue: "Number of Moons",
+		},
+		{
+			name:      "double quoted string with numbers",
+			content:   "\"123\"",
+			wantType:  "nameSegment",
+			wantValue: "123",
+		},
+		{
+			name:      "double quoted string with unicode",
+			content:   "\"你好\"",
 			wantType:  "nameSegment",
 			wantValue: "你好",
 		},
