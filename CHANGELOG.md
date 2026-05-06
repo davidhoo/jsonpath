@@ -1,5 +1,21 @@
 # Changelog
 
+## [v2.1.0] - 2026-05-06
+
+### Bug Fixes
+- fix: length() now counts Unicode runes instead of bytes
+- fix: implement correct operator precedence (&& before ||)
+- fix: recursive descent now includes root node
+- fix: selectors return empty result on type mismatch instead of error
+
+### New Features
+- feat: add existence test [?@.name]
+- feat: support bare @ reference in filters
+
+### Improvements
+- test: integrate RFC 9535 test suite and establish baseline
+- test: verify Phase 1 fixes against RFC 9535 suite
+
 ## [v2.0.2] - 2026-05-06
 
 ### Fixed

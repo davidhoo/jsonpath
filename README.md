@@ -52,16 +52,24 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
   - Enhanced documentation clarity
   - Fixed typos and inconsistencies
 
-### v2.1.0 (Upcoming)
+### v2.1.0
+- Bug Fixes
+  - `length()` now counts Unicode runes instead of bytes
+  - Implement correct operator precedence (`&&` before `||`)
+  - Recursive descent (`..`) now includes root node
+  - Selectors return empty result on type mismatch instead of error
 - New Features
-  - Support for multiple field name extraction (`['name','age']`)
-  - Enhanced array indexing with mixed field types
+  - Existence test `[?@.name]`
+  - Bare `@` reference in filters
 - Improvements
-  - Better error handling for multi-field expressions
-  - Performance optimizations for complex queries
-- Documentation
-  - Added examples for multi-field extraction
-  - Updated feature list to include multi-field support
+  - Integrated RFC 9535 test suite and established baseline
+  - Verified Phase 1 fixes against RFC 9535 suite
+
+### Known Non-Compliance with RFC 9535
+While this implementation aims for full RFC 9535 compliance, the following behaviors are known to differ from the specification:
+- `length()` on non-array/non-object types may not fully match RFC semantics
+- Function extension types (`ValueType`, `LogicalType`, etc.) are not formally enforced
+- Some filter expression edge cases may produce different results from the RFC examples
 
 ### v2.0.0
 - Complete rewrite with RFC 9535 compliance
