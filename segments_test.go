@@ -1788,8 +1788,12 @@ func TestRecursiveDescentIncludesRoot(t *testing.T) {
 			if tt.unordered {
 				// Compare as sets (sort both before comparing)
 				var expectedArr, resultArr []interface{}
-				json.Unmarshal(expectedJSON, &expectedArr)
-				json.Unmarshal(resultJSON, &resultArr)
+				if err := json.Unmarshal(expectedJSON, &expectedArr); err != nil {
+					t.Fatalf("Failed to unmarshal expected: %v", err)
+				}
+				if err := json.Unmarshal(resultJSON, &resultArr); err != nil {
+					t.Fatalf("Failed to unmarshal result: %v", err)
+				}
 				sort.Slice(expectedArr, func(i, j int) bool {
 					return fmt.Sprintf("%v", expectedArr[i]) < fmt.Sprintf("%v", expectedArr[j])
 				})
