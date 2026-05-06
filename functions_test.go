@@ -218,3 +218,33 @@ func TestFunctions(t *testing.T) {
 		})
 	})
 }
+
+func TestLengthUnicode(t *testing.T) {
+	lengthFunc := globalFunctions["length"]
+	tests := []struct {
+		name     string
+		input    string
+		expected float64
+	}{
+		{"Japanese", "日本語", 3},
+		{"ASCII", "hello", 5},
+		{"Accented", "café", 4},
+		{"4-byte Unicode", "𝄞", 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := lengthFunc.Call([]interface{}{tt.input})
+			if err != nil {
+				t.Fatalf("length(%q) returned error: %v", tt.input, err)
+			}
+			got, ok := result.(float64)
+			if !ok {
+				t.Fatalf("length(%q) returned %T, want float64", tt.input, result)
+			}
+			if got != tt.expected {
+				t.Errorf("length(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+}

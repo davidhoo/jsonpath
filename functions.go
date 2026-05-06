@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // Function represents a JSONPath function
@@ -191,7 +192,7 @@ var globalFunctions = map[string]Function{
 
 			// 如果参数是字符串，返回字符串长度
 			if str, ok := args[0].(string); ok {
-				return float64(len(str)), nil
+				return float64(utf8.RuneCountInString(str)), nil
 			}
 
 			// 如果参数是对象，返回对象的键数量
