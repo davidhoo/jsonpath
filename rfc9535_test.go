@@ -3,16 +3,16 @@ package jsonpath
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
 type RFC9535TestCase struct {
-	Name     string      `json:"name"`
-	Selector string      `json:"selector"`
-	Document interface{} `json:"document"`
-	Expected interface{} `json:"result"`
-	Invalid  bool        `json:"invalid,omitempty"`
+	Name        string      `json:"name"`
+	Selector    string      `json:"selector"`
+	Document    interface{} `json:"document"`
+	Expected    interface{} `json:"result"`
+	ResultPaths interface{} `json:"result_paths,omitempty"`
+	Invalid     bool        `json:"invalid_selector,omitempty"`
 }
 
 type RFC9535TestSuite struct {
@@ -22,22 +22,10 @@ type RFC9535TestSuite struct {
 func loadRFC9535TestSuite(t *testing.T) *RFC9535TestSuite {
 	t.Helper()
 
-	paths := []string{
-		"testdata/rfc9535/testdata.json",
-		filepath.Join("testdata", "rfc9535", "regression_suite.yaml"),
-	}
+	path := "testdata/rfc9535/testdata.json"
 
-	var data []byte
-	var err error
-	for _, path := range paths {
-		if _, err = os.Stat(path); err == nil {
-			data, err = os.ReadFile(path)
-			if err == nil {
-				break
-			}
-		}
-	}
-	if data == nil {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		t.Skip("RFC 9535 test data not found, skipping tests")
 		return nil
 	}
