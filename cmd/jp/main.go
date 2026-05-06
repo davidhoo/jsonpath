@@ -56,7 +56,7 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  %s  %s %s\n",
 		flagColor("-f"),
 		descColor("JSON file path"),
-		descColor("(reads from stdin if not specified)"),
+		descColor("(reads from stdin if not specified, use - for stdin)"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("-c"),
@@ -151,6 +151,12 @@ func printHelp() {
 		exampleColor("echo '{\"name\":\"jp\"}' |"),
 		cmdColor("jp"),
 		flagColor("-p '$.name'"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s\n", exampleColor("# Read from stdin with -f -"))
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n\n",
+		exampleColor("echo '{\"name\":\"jp\"}' |"),
+		cmdColor("jp"),
+		flagColor("-f -"),
 	)
 	fmt.Fprintf(os.Stderr, "%s\n", descColor("Functions:"))
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
@@ -373,11 +379,12 @@ func handleSpecialCommands() error {
 }
 
 // readInput reads JSON input from file or stdin
+// #nosec G304 -- CLI tool legitimately reads user-specified files; path is validated with filepath.Clean and traversal check
 func readInput(file string) (string, error) {
 	var input []byte
 	var err error
 
-	if file == "" {
+	if file == "" || file == "-" {
 		input, err = io.ReadAll(os.Stdin)
 	} else {
 		// 验证文件路径
@@ -603,6 +610,16 @@ func isInputFromPipe() bool {
 	return fileInfo.Mode()&os.ModeCharDevice == 0
 }
 
+// hasInputFlags 检查是否有除 -h/--help/-v 之外的参数
+func hasInputFlags() bool {
+	for _, arg := range os.Args[1:] {
+		if arg != "-h" && arg != "--help" && arg != "-v" {
+			return true
+		}
+	}
+	return false
+}
+
 // run 执行主要的程序逻辑
 func run() error {
 	var err error
@@ -614,8 +631,8 @@ func run() error {
 		return err
 	}
 
-	// 如果没有任何参数和文件输入，显示帮助信息
-	if cfg.path == "" && cfg.file == "" && !isInputFromPipe() {
+	// 如果没有任何参数、文件输入和管道输入，显示帮助信息
+	if cfg.path == "" && cfg.file == "" && !isInputFromPipe() && !hasInputFlags() {
 		printHelp()
 		return nil
 	}

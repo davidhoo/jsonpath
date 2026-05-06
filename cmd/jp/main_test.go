@@ -548,6 +548,13 @@ func TestRun(t *testing.T) {
 			wantOut: `{`,
 			wantErr: false,
 		},
+		{
+			name:    "f flag with dash reads stdin",
+			args:    []string{"jp", "-f", "-"},
+			input:   `{"name":"test"}`,
+			wantOut: `{`,
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
