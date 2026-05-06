@@ -164,7 +164,7 @@ func (s *nameSegment) evaluate(value interface{}) ([]interface{}, error) {
 
 	val, exists := obj[s.name]
 	if !exists {
-		return nil, fmt.Errorf("field %s not found", s.name)
+		return []interface{}{}, nil
 	}
 
 	return []interface{}{val}, nil
@@ -182,7 +182,7 @@ type indexSegment struct {
 func (s *indexSegment) evaluate(value interface{}) ([]interface{}, error) {
 	arr, ok := value.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("value is not an array")
+		return []interface{}{}, nil
 	}
 
 	idx := s.normalizeIndex(len(arr))
@@ -418,7 +418,7 @@ func (s *sliceSegment) evaluate(value interface{}) ([]interface{}, error) {
 	// 检查值是否为数组
 	arr, ok := value.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("value is not an array")
+		return []interface{}{}, nil
 	}
 
 	// 获取规范化的范围
@@ -549,7 +549,7 @@ type multiIndexSegment struct {
 func (s *multiIndexSegment) evaluate(value interface{}) ([]interface{}, error) {
 	arr, ok := value.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("multi-index can only be applied to array")
+		return []interface{}{}, nil
 	}
 
 	var result []interface{}
@@ -662,7 +662,7 @@ type multiNameSegment struct {
 func (s *multiNameSegment) evaluate(value interface{}) ([]interface{}, error) {
 	obj, ok := value.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("multi-name can only be applied to object")
+		return []interface{}{}, nil
 	}
 
 	var result []interface{}

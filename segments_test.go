@@ -434,8 +434,8 @@ func TestNameSegmentEvaluate(t *testing.T) {
 				"name": "John",
 				"age":  30,
 			},
-			wantErr:     true,
-			errContains: "field phone not found",
+			want:    []interface{}{},
+			wantErr: false,
 		},
 		{
 			name:    "value is not an object",
@@ -561,8 +561,8 @@ func TestIndexSegmentEvaluate(t *testing.T) {
 			name:        "value is not an array",
 			segment:     &indexSegment{index: 0},
 			value:       "not an array",
-			wantErr:     true,
-			errContains: "value is not an array",
+			want:        []interface{}{},
+			wantErr:     false,
 		},
 	}
 
@@ -974,8 +974,8 @@ func TestSliceSegmentEvaluate(t *testing.T) {
 				step:  1,
 			},
 			value:   "not an array",
-			want:    nil,
-			wantErr: true,
+			want:    []interface{}{},
+			wantErr: false,
 		},
 		{
 			name: "nil value",
@@ -985,8 +985,8 @@ func TestSliceSegmentEvaluate(t *testing.T) {
 				step:  1,
 			},
 			value:   nil,
-			want:    nil,
-			wantErr: true,
+			want:    []interface{}{},
+			wantErr: false,
 		},
 	}
 
@@ -1150,8 +1150,8 @@ func TestMultiIndexSegmentEvaluate(t *testing.T) {
 				indices: []int{0, 1},
 			},
 			value:   "not an array",
-			want:    nil,
-			wantErr: true,
+			want:    []interface{}{},
+			wantErr: false,
 		},
 		{
 			name: "nil value",
@@ -1159,8 +1159,8 @@ func TestMultiIndexSegmentEvaluate(t *testing.T) {
 				indices: []int{0, 1},
 			},
 			value:   nil,
-			want:    nil,
-			wantErr: true,
+			want:    []interface{}{},
+			wantErr: false,
 		},
 	}
 
@@ -1247,8 +1247,8 @@ func TestMultiNameSegmentEvaluate(t *testing.T) {
 				names: []string{"name", "age"},
 			},
 			value:   "not an object",
-			want:    nil,
-			wantErr: true,
+			want:    []interface{}{},
+			wantErr: false,
 		},
 		{
 			name: "nil value",
@@ -1256,8 +1256,8 @@ func TestMultiNameSegmentEvaluate(t *testing.T) {
 				names: []string{"name", "age"},
 			},
 			value:   nil,
-			want:    nil,
-			wantErr: true,
+			want:    []interface{}{},
+			wantErr: false,
 		},
 		{
 			name: "mixed value types",

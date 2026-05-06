@@ -532,7 +532,7 @@ func TestRun(t *testing.T) {
 			name:    "invalid query",
 			args:    []string{"jp", "-p", "$[invalid]"},
 			input:   `{"name":"test"}`,
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "compact output",
