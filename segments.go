@@ -489,14 +489,12 @@ func (s *filterSegment) evaluate(data interface{}) ([]interface{}, error) {
 	if arr, ok := data.([]interface{}); ok {
 		var results []interface{}
 		for _, item := range arr {
-			if m, ok := item.(map[string]interface{}); ok {
-				result, err := s.expr.evaluate(m)
-				if err != nil {
-					return nil, err
-				}
-				if result {
-					results = append(results, m)
-				}
+			result, err := s.expr.evaluate(item)
+			if err != nil {
+				return nil, err
+			}
+			if result {
+				results = append(results, item)
 			}
 		}
 		return results, nil

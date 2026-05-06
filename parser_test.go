@@ -936,6 +936,18 @@ func TestExistenceFilterParsing(t *testing.T) {
 			wantOperator: "not_exists",
 			wantField:    "name",
 		},
+		{
+			name:         "bare @ with > operator",
+			path:         `$[?@>3]`,
+			wantOperator: ">",
+			wantField:    "@",
+		},
+		{
+			name:         "bare @ with == operator",
+			path:         `$[?@=="b"]`,
+			wantOperator: "==",
+			wantField:    "@",
+		},
 	}
 
 	for _, tt := range tests {
@@ -971,6 +983,69 @@ func TestExistenceFilterParsing(t *testing.T) {
 			}
 			if condNode.cond.field != tt.wantField {
 				t.Errorf("field = %v, want %v", condNode.cond.field, tt.wantField)
+			}
+		})
+	}
+}
+
+func TestBareAtReference(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     string
+		path     string
+		expected string
+	}{
+		{
+			name:     "bare @ with numeric comparison >",
+			data:     `[5,3,1,4,2]`,
+			path:     `$[?@>3]`,
+			expected: `[5,4]`,
+		},
+		{
+			name:     "bare @ with string comparison ==",
+			data:     `["a","b","c"]`,
+			path:     `$[?@=="b"]`,
+			expected: `["b"]`,
+		},
+		{
+			name:     "combined bare @ and @.field",
+			data:     `[{"t":"a","v":1},{"t":"b","v":2}]`,
+			path:     `$[?@.t=="a"&&@.v>0]`,
+			expected: `[{"t":"a","v":1}]`,
+		},
+		{
+			name:     "bare @ with < operator",
+			data:     `[5,3,1,4,2]`,
+			path:     `$[?@<3]`,
+			expected: `[1,2]`,
+		},
+		{
+			name:     "bare @ with >= operator",
+			data:     `[5,3,1,4,2]`,
+			path:     `$[?@>=4]`,
+			expected: `[5,4]`,
+		},
+		{
+			name:     "bare @ with != operator",
+			data:     `["a","b","c"]`,
+			path:     `$[?@!="b"]`,
+			expected: `["a","c"]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var data interface{}
+			if err := json.Unmarshal([]byte(tt.data), &data); err != nil {
+				t.Fatalf("failed to parse data: %v", err)
+			}
+			result, err := Query(data, tt.path)
+			if err != nil {
+				t.Fatalf("Query() error: %v", err)
+			}
+			resultJSON, _ := json.Marshal(result)
+			if string(resultJSON) != tt.expected {
+				t.Errorf("Query() = %s, want %s", resultJSON, tt.expected)
 			}
 		})
 	}
