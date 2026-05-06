@@ -25,7 +25,7 @@ func Query(data interface{}, path string) (interface{}, error) {
 	// Evaluate segments
 	result := []interface{}{data}
 	for _, seg := range segments {
-		var newResult []interface{}
+		newResult := make([]interface{}, 0)
 		for _, val := range result {
 			evaluated, err := seg.evaluate(val)
 			if err != nil {
@@ -52,6 +52,9 @@ func Query(data interface{}, path string) (interface{}, error) {
 	// 对于其他情况，如果只有一个结果，返回单个值
 	if len(result) == 1 {
 		return result[0], nil
+	}
+	if result == nil {
+		return []interface{}{}, nil
 	}
 	return result, nil
 }

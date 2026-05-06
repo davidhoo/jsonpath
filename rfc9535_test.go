@@ -8,12 +8,13 @@ import (
 )
 
 type RFC9535TestCase struct {
-	Name        string      `json:"name"`
-	Selector    string      `json:"selector"`
-	Document    interface{} `json:"document"`
-	Expected    interface{} `json:"result"`
-	ResultPaths interface{} `json:"result_paths,omitempty"`
-	Invalid     bool        `json:"invalid_selector,omitempty"`
+	Name        string        `json:"name"`
+	Selector    string        `json:"selector"`
+	Document    interface{}   `json:"document"`
+	Expected    interface{}   `json:"result"`
+	Results     []interface{} `json:"results,omitempty"`
+	ResultPaths interface{}   `json:"result_paths,omitempty"`
+	Invalid     bool          `json:"invalid_selector,omitempty"`
 }
 
 type RFC9535TestSuite struct {
@@ -91,14 +92,39 @@ func TestRFC9535Suite(t *testing.T) {
 				return
 			}
 
-			expectedJSON, _ := json.Marshal(test.Expected)
-			resultJSON, _ := json.Marshal(result)
+			// RFC 9535 expects results as a nodelist (array).
+			// Query() returns single value for single results; normalize to array.
+			normalizedResult := result
+			if _, isArray := result.([]interface{}); !isArray {
+				normalizedResult = []interface{}{result}
+			}
 
-			if string(expectedJSON) != string(resultJSON) {
-				t.Logf("Selector %q: expected %s, got %s", test.Selector, expectedJSON, resultJSON)
-				failCount++
+			resultJSON, _ := json.Marshal(normalizedResult)
+
+			// Check if test has multiple valid results (results field)
+			if len(test.Results) > 0 {
+				matched := false
+				for _, validResult := range test.Results {
+					validJSON, _ := json.Marshal(validResult)
+					if string(resultJSON) == string(validJSON) {
+						matched = true
+						break
+					}
+				}
+				if matched {
+					passCount++
+				} else {
+					t.Logf("Selector %q: result %s matches none of the expected results", test.Selector, resultJSON)
+					failCount++
+				}
 			} else {
-				passCount++
+				expectedJSON, _ := json.Marshal(test.Expected)
+				if string(expectedJSON) != string(resultJSON) {
+					t.Logf("Selector %q: expected %s, got %s", test.Selector, expectedJSON, resultJSON)
+					failCount++
+				} else {
+					passCount++
+				}
 			}
 		})
 	}
