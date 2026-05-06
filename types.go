@@ -66,10 +66,20 @@ func (n *orNode) evaluate(item interface{}) (bool, error) {
 func evaluateSingleCondition(cond filterCondition, item interface{}) (bool, error) {
 	value, err := getFieldValue(item, cond.field)
 	if err != nil {
+		// For not_exists operator, field not found means it doesn't exist (true)
+		if cond.operator == "not_exists" {
+			return true, nil
+		}
 		return false, nil
 	}
 
 	switch cond.operator {
+	case "exists":
+		// Existence test: field exists and value is not nil
+		return value != nil, nil
+	case "not_exists":
+		// Non-existence test: field doesn't exist or value is nil
+		return value == nil, nil
 	case "match":
 		str, ok := value.(string)
 		if !ok {

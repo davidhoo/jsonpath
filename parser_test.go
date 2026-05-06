@@ -897,3 +897,81 @@ func TestOperatorPrecedence(t *testing.T) {
 		})
 	}
 }
+
+func TestExistenceFilterParsing(t *testing.T) {
+	tests := []struct {
+		name         string
+		path         string
+		wantOperator string
+		wantField    string
+		wantErr      bool
+	}{
+		{
+			name:         "simple existence test",
+			path:         `$[?@.name]`,
+			wantOperator: "exists",
+			wantField:    "name",
+		},
+		{
+			name:         "existence test with parentheses",
+			path:         `$[?(@.name)]`,
+			wantOperator: "exists",
+			wantField:    "name",
+		},
+		{
+			name:         "nested field existence",
+			path:         `$[?@.nested.field]`,
+			wantOperator: "exists",
+			wantField:    "nested.field",
+		},
+		{
+			name:         "negated existence test",
+			path:         `$[?!@.name]`,
+			wantOperator: "not_exists",
+			wantField:    "name",
+		},
+		{
+			name:         "negated existence with parentheses",
+			path:         `$[?!(@.name)]`,
+			wantOperator: "not_exists",
+			wantField:    "name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			segments, err := parse(tt.path)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parse() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+
+			// Find the filter segment
+			var filterSeg *filterSegment
+			for _, seg := range segments {
+				if fs, ok := seg.(*filterSegment); ok {
+					filterSeg = fs
+					break
+				}
+			}
+			if filterSeg == nil {
+				t.Fatal("No filter segment found")
+			}
+
+			// Extract condition node
+			condNode, ok := filterSeg.expr.(*conditionNode)
+			if !ok {
+				t.Fatalf("Expected conditionNode, got %T", filterSeg.expr)
+			}
+
+			if condNode.cond.operator != tt.wantOperator {
+				t.Errorf("operator = %v, want %v", condNode.cond.operator, tt.wantOperator)
+			}
+			if condNode.cond.field != tt.wantField {
+				t.Errorf("field = %v, want %v", condNode.cond.field, tt.wantField)
+			}
+		})
+	}
+}

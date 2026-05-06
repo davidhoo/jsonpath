@@ -1071,3 +1071,101 @@ func TestMultiFieldExtraction(t *testing.T) {
 		})
 	}
 }
+
+func TestExistenceFilter(t *testing.T) {
+	testCases := []struct {
+		name     string
+		json     string
+		path     string
+		expected interface{}
+		wantErr  bool
+	}{
+		{
+			name: "existence test filters items with field",
+			json: `[{"name":"a","v":1},{"v":2},{"name":"b","v":3}]`,
+			path: `$[?@.name]`,
+			expected: []interface{}{
+				map[string]interface{}{"name": "a", "v": float64(1)},
+				map[string]interface{}{"name": "b", "v": float64(3)},
+			},
+		},
+		{
+			name: "existence test with nested field",
+			json: `[{"a":{"b":1}},{"a":{}},{"c":1}]`,
+			path: `$[?@.a.b]`,
+			expected: []interface{}{
+				map[string]interface{}{"a": map[string]interface{}{"b": float64(1)}},
+			},
+		},
+		{
+			name: "null treated as non-existent",
+			json: `[{"a":null},{"a":1}]`,
+			path: `$[?@.a]`,
+			expected: []interface{}{
+				map[string]interface{}{"a": float64(1)},
+			},
+		},
+		{
+			name: "existence test with parentheses",
+			json: `[{"name":"a","v":1},{"v":2},{"name":"b","v":3}]`,
+			path: `$[?(@.name)]`,
+			expected: []interface{}{
+				map[string]interface{}{"name": "a", "v": float64(1)},
+				map[string]interface{}{"name": "b", "v": float64(3)},
+			},
+		},
+		{
+			name: "negated existence test",
+			json: `[{"name":"a","v":1},{"v":2},{"name":"b","v":3}]`,
+			path: `$[?!@.name]`,
+			expected: []interface{}{
+				map[string]interface{}{"v": float64(2)},
+			},
+		},
+		{
+			name: "existence test combined with comparison",
+			json: `[{"name":"a","v":1},{"v":2},{"name":"b","v":3}]`,
+			path: `$[?@.name && @.v>1]`,
+			expected: []interface{}{
+				map[string]interface{}{"name": "b", "v": float64(3)},
+			},
+		},
+		{
+			name: "existence test with OR",
+			json: `[{"name":"a","v":1},{"v":2},{"name":"b","v":3}]`,
+			path: `$[?@.name || @.v==2]`,
+			expected: []interface{}{
+				map[string]interface{}{"name": "a", "v": float64(1)},
+				map[string]interface{}{"v": float64(2)},
+				map[string]interface{}{"name": "b", "v": float64(3)},
+			},
+		},
+		{
+			name: "existence test on objects",
+			json: `{"items": [{"id": 1}, {"id": 2, "name": "foo"}]}`,
+			path: `$.items[?@.name]`,
+			expected: []interface{}{
+				map[string]interface{}{"id": float64(2), "name": "foo"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Query(tc.json, tc.path)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("got %v, want %v", result, tc.expected)
+			}
+		})
+	}
+}

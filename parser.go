@@ -370,6 +370,10 @@ func negateNode(node exprNode) (exprNode, error) {
 			newCond.operator = "<="
 		case ">=":
 			newCond.operator = "<"
+		case "exists":
+			newCond.operator = "not_exists"
+		case "not_exists":
+			newCond.operator = "exists"
 		default:
 			return nil, NewError(ErrInvalidFilter, fmt.Sprintf("cannot negate operator: %s", newCond.operator), "")
 		}
@@ -549,7 +553,17 @@ func parseFilterCondition(content string) (filterCondition, error) {
 	}
 
 	if !operatorFound {
-		return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("no valid operator found in condition: %s", content), content)
+		// No operator found - validate that this is a valid field path
+		field := strings.TrimSpace(content)
+		// Check for invalid operator-like characters
+		if strings.ContainsAny(field, "=<>!") {
+			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("no valid operator found in condition: %s", content), content)
+		}
+		return filterCondition{
+			field:    strings.TrimPrefix(field, "@."),
+			operator: "exists",
+			value:    nil,
+		}, nil
 	}
 
 	// 分割路径和值
