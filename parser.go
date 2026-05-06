@@ -172,129 +172,262 @@ func parseBracketSegment(content string) (segment, error) {
 // 标准化过滤器表达式
 func normalizeFilterExpression(expr string) string {
 	expr = strings.TrimSpace(expr)
-	// 移除括号
-	if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
-		expr = strings.TrimSpace(expr[1 : len(expr)-1])
-	}
 	return expr
 }
 
-// 应用 De Morgan 定律转换表达式
-func applyDeMorgan(expr string) (string, error) {
-	// 处理空表达式
-	if expr == "" {
-		return "", NewError(ErrInvalidFilter, "empty expression", expr)
-	}
+// expressionParser is a recursive descent parser for filter expressions
+type expressionParser struct {
+	input string
+	pos   int
+}
 
-	// 如果表达式被括号包围，先移除括号
-	if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
-		expr = strings.TrimSpace(expr[1 : len(expr)-1])
-	}
-
-	// 解析表达式
-	conditions, operators, err := splitLogicalOperators(expr)
+// parseFilterExpression parses a filter expression string into an expression tree
+func parseFilterExpression(input string) (exprNode, error) {
+	p := &expressionParser{input: input, pos: 0}
+	node, err := p.parseOr()
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	p.skipSpaces()
+	if p.pos < len(p.input) {
+		return nil, NewError(ErrInvalidFilter, fmt.Sprintf("unexpected character at position %d: %c", p.pos, p.input[p.pos]), input)
+	}
+	return node, nil
+}
+
+func (p *expressionParser) skipSpaces() {
+	for p.pos < len(p.input) && p.input[p.pos] == ' ' {
+		p.pos++
+	}
+}
+
+func (p *expressionParser) parseOr() (exprNode, error) {
+	left, err := p.parseAnd()
+	if err != nil {
+		return nil, err
 	}
 
-	// 转换每个条件
-	for i := range conditions {
-		cond := strings.TrimSpace(conditions[i])
-		// 如果条件本身是一个复合表达式（带括号），递归处理
-		if strings.HasPrefix(cond, "(") && strings.HasSuffix(cond, ")") {
-			inner, err := applyDeMorgan(cond)
+	children := []exprNode{left}
+	for {
+		p.skipSpaces()
+		if p.pos+1 < len(p.input) && p.input[p.pos:p.pos+2] == "||" {
+			p.pos += 2
+			right, err := p.parseAnd()
 			if err != nil {
-				return "", err
+				return nil, err
 			}
-			conditions[i] = inner
+			children = append(children, right)
+		} else {
+			break
+		}
+	}
+
+	if len(children) == 1 {
+		return children[0], nil
+	}
+	return &orNode{children: children}, nil
+}
+
+func (p *expressionParser) parseAnd() (exprNode, error) {
+	left, err := p.parseUnary()
+	if err != nil {
+		return nil, err
+	}
+
+	children := []exprNode{left}
+	for {
+		p.skipSpaces()
+		if p.pos+1 < len(p.input) && p.input[p.pos:p.pos+2] == "&&" {
+			p.pos += 2
+			right, err := p.parseUnary()
+			if err != nil {
+				return nil, err
+			}
+			children = append(children, right)
+		} else {
+			break
+		}
+	}
+
+	if len(children) == 1 {
+		return children[0], nil
+	}
+	return &andNode{children: children}, nil
+}
+
+func (p *expressionParser) parseUnary() (exprNode, error) {
+	p.skipSpaces()
+	if p.pos < len(p.input) && p.input[p.pos] == '!' {
+		p.pos++
+		inner, err := p.parsePrimary()
+		if err != nil {
+			return nil, err
+		}
+		return negateNode(inner)
+	}
+	return p.parsePrimary()
+}
+
+func (p *expressionParser) parsePrimary() (exprNode, error) {
+	p.skipSpaces()
+
+	if p.pos >= len(p.input) {
+		return nil, NewError(ErrInvalidFilter, "unexpected end of expression", p.input)
+	}
+
+	// Handle parenthesized expression
+	if p.input[p.pos] == '(' {
+		p.pos++ // skip '('
+		node, err := p.parseOr()
+		if err != nil {
+			return nil, err
+		}
+		p.skipSpaces()
+		if p.pos >= len(p.input) || p.input[p.pos] != ')' {
+			return nil, NewError(ErrInvalidFilter, "missing closing parenthesis", p.input)
+		}
+		p.pos++ // skip ')'
+		return node, nil
+	}
+
+	// Parse atomic condition (everything until next &&, ||, or unmatched ))
+	start := p.pos
+	depth := 0
+	inQuotes := false
+	inSingleQuotes := false
+
+	for p.pos < len(p.input) {
+		ch := p.input[p.pos]
+
+		if ch == '"' && !inSingleQuotes {
+			inQuotes = !inQuotes
+			p.pos++
+			continue
+		}
+		if ch == '\'' && !inQuotes {
+			inSingleQuotes = !inSingleQuotes
+			p.pos++
 			continue
 		}
 
-		// 确保条件以 @ 开头
-		if !strings.HasPrefix(cond, "@") {
-			if strings.HasPrefix(cond, ".") {
-				cond = "@" + cond
-			} else {
-				return "", NewError(ErrInvalidFilter, fmt.Sprintf("invalid condition: %s", cond), expr)
-			}
+		if inQuotes || inSingleQuotes {
+			p.pos++
+			continue
 		}
 
-		// 反转比较操作符
-		for _, op := range []string{"<=", ">=", "==", "!=", "<", ">"} {
-			if idx := strings.Index(cond, op); idx != -1 {
-				prefix := cond[:idx]
-				suffix := cond[idx+len(op):]
-				var newOp string
-				switch op {
-				case "==":
-					newOp = "!="
-				case "!=":
-					newOp = "=="
-				case "<":
-					newOp = ">="
-				case "<=":
-					newOp = ">"
-				case ">":
-					newOp = "<="
-				case ">=":
-					newOp = "<"
-				}
-				conditions[i] = prefix + newOp + suffix
+		if ch == '(' {
+			depth++
+			p.pos++
+			continue
+		}
+		if ch == ')' {
+			if depth == 0 {
+				break
+			}
+			depth--
+			p.pos++
+			continue
+		}
+
+		// Check for top-level && or ||
+		if depth == 0 && p.pos+1 < len(p.input) {
+			op := p.input[p.pos : p.pos+2]
+			if op == "&&" || op == "||" {
 				break
 			}
 		}
+
+		p.pos++
 	}
 
-	// 转换逻辑运算符
-	for i := range operators {
-		switch operators[i] {
-		case "&&":
-			operators[i] = "||"
-		case "||":
-			operators[i] = "&&"
-		}
+	condStr := strings.TrimSpace(p.input[start:p.pos])
+	if condStr == "" {
+		return nil, NewError(ErrInvalidFilter, "empty condition", p.input)
 	}
 
-	// 重建表达式
-	var result strings.Builder
-	for i, cond := range conditions {
-		if i > 0 {
-			result.WriteString(" " + operators[i-1] + " ")
-		}
-		// 如果条件包含空格或逻辑运算符，需要加括号
-		if strings.Contains(cond, " ") || strings.Contains(cond, "&&") || strings.Contains(cond, "||") {
-			result.WriteString("(" + cond + ")")
-		} else {
-			result.WriteString(cond)
-		}
+	cond, err := parseFilterCondition(condStr)
+	if err != nil {
+		return nil, err
 	}
+	return &conditionNode{cond: cond}, nil
+}
 
-	return result.String(), nil
+// negateNode applies negation to an expression node
+func negateNode(node exprNode) (exprNode, error) {
+	switch n := node.(type) {
+	case *conditionNode:
+		newCond := n.cond
+		switch newCond.operator {
+		case "==":
+			newCond.operator = "!="
+		case "!=":
+			newCond.operator = "=="
+		case "<":
+			newCond.operator = ">="
+		case "<=":
+			newCond.operator = ">"
+		case ">":
+			newCond.operator = "<="
+		case ">=":
+			newCond.operator = "<"
+		default:
+			return nil, NewError(ErrInvalidFilter, fmt.Sprintf("cannot negate operator: %s", newCond.operator), "")
+		}
+		return &conditionNode{cond: newCond}, nil
+	case *andNode:
+		children := make([]exprNode, len(n.children))
+		for i, child := range n.children {
+			negated, err := negateNode(child)
+			if err != nil {
+				return nil, err
+			}
+			children[i] = negated
+		}
+		return &orNode{children: children}, nil
+	case *orNode:
+		children := make([]exprNode, len(n.children))
+		for i, child := range n.children {
+			negated, err := negateNode(child)
+			if err != nil {
+				return nil, err
+			}
+			children[i] = negated
+		}
+		return &andNode{children: children}, nil
+	default:
+		return nil, NewError(ErrInvalidFilter, "cannot negate expression", "")
+	}
 }
 
 // 解析过滤器表达式
 func parseFilterSegment(content string) (segment, error) {
 	// 检查语法
-	if !strings.HasPrefix(content, "@") && !strings.HasPrefix(content, "(@") && !strings.HasPrefix(content, "!") && !strings.HasPrefix(content, "(!") {
+	if !strings.HasPrefix(content, "@") && !strings.HasPrefix(content, "(@") && !strings.HasPrefix(content, "!") && !strings.HasPrefix(content, "(!") && !strings.HasPrefix(content, "(") {
 		return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
 	}
 
 	// 取过滤器内容
-	var isNegated bool
 	var filterContent string
-	var isCompoundNegation bool
 
 	switch {
 	case strings.HasPrefix(content, "(!"):
 		if !strings.HasSuffix(content, ")") {
 			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
 		}
-		isNegated = true
-		isCompoundNegation = true
 		filterContent = content[2 : len(content)-1]
+		// Apply De Morgan's laws: !(A && B) => !A || !B, !(A || B) => !A && !B
+		expr, err := parseFilterExpression(filterContent)
+		if err != nil {
+			return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error parsing filter expression: %v", err), content)
+		}
+		negated, err := negateNode(expr)
+		if err != nil {
+			return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error negating expression: %v", err), content)
+		}
+		return &filterSegment{expr: negated}, nil
 	case strings.HasPrefix(content, "!@"):
-		isNegated = true
-		filterContent = content[1:]
+		// Keep the ! in the content for the parser to handle as unary operator
+		filterContent = content
 	case strings.HasPrefix(content, "(@"):
 		if !strings.HasSuffix(content, ")") {
 			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
@@ -303,93 +436,44 @@ func parseFilterSegment(content string) (segment, error) {
 	case strings.HasPrefix(content, "@"):
 		filterContent = content
 	case strings.HasPrefix(content, "!"):
-		isNegated = true
-		filterContent = content[1:]
-		if strings.HasPrefix(filterContent, "(") {
-			if !strings.HasSuffix(filterContent, ")") {
+		// Keep the ! in the content for the parser to handle as unary operator
+		filterContent = content
+		// Check for !(expr) pattern
+		if len(content) > 1 && content[1] == '(' {
+			if !strings.HasSuffix(content, ")") {
 				return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
 			}
-			isCompoundNegation = true
-			filterContent = filterContent[1 : len(filterContent)-1]
+			// Apply De Morgan's laws for !(expr)
+			innerContent := content[2 : len(content)-1]
+			expr, err := parseFilterExpression(innerContent)
+			if err != nil {
+				return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error parsing filter expression: %v", err), content)
+			}
+			negated, err := negateNode(expr)
+			if err != nil {
+				return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error negating expression: %v", err), content)
+			}
+			return &filterSegment{expr: negated}, nil
 		}
+	case strings.HasPrefix(content, "("):
+		if !strings.HasSuffix(content, ")") {
+			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
+		}
+		filterContent = content[1 : len(content)-1]
 	default:
 		filterContent = content
-	}
-
-	// 如果是复合否定表达式，应用 De Morgan 定律
-	if isNegated && isCompoundNegation {
-		var err error
-		filterContent, err = applyDeMorgan(filterContent)
-		if err != nil {
-			return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error applying De Morgan's laws: %v", err), content)
-		}
-		isNegated = false // 已经处理过否定
 	}
 
 	// 标准化表达式
 	filterContent = normalizeFilterExpression(filterContent)
 
-	// 分割逻辑运算符
-	conditions, operators, err := splitLogicalOperators(filterContent)
+	// 解析表达式为树结构
+	expr, err := parseFilterExpression(filterContent)
 	if err != nil {
-		return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error splitting logical operators: %v", err), content)
+		return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error parsing filter expression: %v", err), content)
 	}
 
-	// 解析每个条件
-	filterConditions := make([]filterCondition, 0, len(conditions))
-	for i, condStr := range conditions {
-		// 处理括号内的条件
-		if strings.HasPrefix(condStr, "(") && strings.HasSuffix(condStr, ")") {
-			// 递归处理括号内的条件
-			innerContent := strings.TrimSpace(condStr[1 : len(condStr)-1])
-			innerConditions, innerOperators, err := splitLogicalOperators(innerContent)
-			if err != nil {
-				return nil, NewError(ErrInvalidFilter, fmt.Sprintf("error parsing inner conditions: %v", err), content)
-			}
-
-			// 解析内部条件
-			for j, innerCondStr := range innerConditions {
-				cond, err := parseFilterCondition(strings.TrimSpace(innerCondStr))
-				if err != nil {
-					return nil, err
-				}
-				filterConditions = append(filterConditions, cond)
-				if j < len(innerOperators) {
-					operators = append(operators, innerOperators[j])
-				}
-			}
-		} else {
-			// 解析普通条件
-			cond, err := parseFilterCondition(strings.TrimSpace(condStr))
-			if err != nil {
-				return nil, err
-			}
-			// 如果是简单否定表达式，应用否定到第一个条件
-			if isNegated && i == 0 {
-				switch cond.operator {
-				case "==":
-					cond.operator = "!="
-				case "!=":
-					cond.operator = "=="
-				case "<":
-					cond.operator = ">="
-				case "<=":
-					cond.operator = ">"
-				case ">":
-					cond.operator = "<="
-				case ">=":
-					cond.operator = "<"
-				}
-				isNegated = false // 已经处理过否定
-			}
-			filterConditions = append(filterConditions, cond)
-		}
-	}
-
-	return &filterSegment{
-		conditions: filterConditions,
-		operators:  operators,
-	}, nil
+	return &filterSegment{expr: expr}, nil
 }
 
 // 解析过滤器条件
@@ -894,87 +978,6 @@ func parseFunctionCall(content string) (segment, error) {
 	}
 
 	return &functionSegment{name: name, args: args}, nil
-}
-
-// 分割逻辑运算符
-func splitLogicalOperators(expr string) ([]string, []string, error) {
-	var conditions []string
-	var operators []string
-	var currentCondition strings.Builder
-	inQuotes := false
-	inParens := 0
-	i := 0
-
-	for i < len(expr) {
-		// 处理引号内的内容
-		if expr[i] == '"' || expr[i] == '\'' {
-			inQuotes = !inQuotes
-			currentCondition.WriteByte(expr[i])
-			i++
-			continue
-		}
-
-		// 处理括号
-		if expr[i] == '(' {
-			inParens++
-			currentCondition.WriteByte(expr[i])
-			i++
-			continue
-		}
-		if expr[i] == ')' {
-			inParens--
-			if inParens < 0 {
-				return nil, nil, NewError(ErrInvalidFilter, "unmatched closing parenthesis", expr)
-			}
-			currentCondition.WriteByte(expr[i])
-			i++
-			continue
-		}
-
-		// 检查逻辑运算符
-		if !inQuotes && inParens == 0 {
-			if i+1 < len(expr) {
-				op := expr[i : i+2]
-				if op == "&&" || op == "||" {
-					// 加当前条件
-					cond := strings.TrimSpace(currentCondition.String())
-					if cond == "" {
-						return nil, nil, NewError(ErrInvalidFilter, "empty condition before operator", expr)
-					}
-					conditions = append(conditions, cond)
-					operators = append(operators, op)
-					currentCondition.Reset()
-					i += 2
-					continue
-				}
-			}
-		}
-
-		currentCondition.WriteByte(expr[i])
-		i++
-	}
-
-	// 检查最终状态
-	if inQuotes {
-		return nil, nil, NewError(ErrInvalidFilter, "unclosed quotes", expr)
-	}
-	if inParens != 0 {
-		return nil, nil, NewError(ErrInvalidFilter, "unmatched parentheses", expr)
-	}
-
-	// 添加最后一个条件
-	lastCond := strings.TrimSpace(currentCondition.String())
-	if lastCond == "" {
-		return nil, nil, NewError(ErrInvalidFilter, "empty condition at end", expr)
-	}
-	conditions = append(conditions, lastCond)
-
-	// 验证条件和运算符的数量关系
-	if len(conditions) != len(operators)+1 {
-		return nil, nil, NewError(ErrInvalidFilter, "invalid number of conditions and operators", expr)
-	}
-
-	return conditions, operators, nil
 }
 
 // parseFilterValue parses a filter value string into an appropriate type

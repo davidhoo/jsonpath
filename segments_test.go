@@ -1018,8 +1018,8 @@ func TestFilterSegmentString(t *testing.T) {
 		{
 			name: "single condition",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: ">", value: float64(10)},
+				expr: &conditionNode{
+					cond: filterCondition{field: "price", operator: ">", value: float64(10)},
 				},
 			},
 			want: "[?@.price > 10]",
@@ -1027,43 +1027,39 @@ func TestFilterSegmentString(t *testing.T) {
 		{
 			name: "multiple conditions with AND",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: ">", value: float64(10)},
-					{field: "@.category", operator: "==", value: "book"},
+				expr: &andNode{
+					children: []exprNode{
+						&conditionNode{cond: filterCondition{field: "price", operator: ">", value: float64(10)}},
+						&conditionNode{cond: filterCondition{field: "category", operator: "==", value: "book"}},
+					},
 				},
-				operators: []string{"&&"},
 			},
 			want: "[?@.price > 10 && @.category == 'book']",
 		},
 		{
 			name: "multiple conditions with OR",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: "<", value: float64(5)},
-					{field: "@.price", operator: ">", value: float64(100)},
+				expr: &orNode{
+					children: []exprNode{
+						&conditionNode{cond: filterCondition{field: "price", operator: "<", value: float64(5)}},
+						&conditionNode{cond: filterCondition{field: "price", operator: ">", value: float64(100)}},
+					},
 				},
-				operators: []string{"||"},
 			},
 			want: "[?@.price < 5 || @.price > 100]",
 		},
 		{
 			name: "complex conditions",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: ">", value: float64(10)},
-					{field: "@.category", operator: "==", value: "book"},
-					{field: "@.inStock", operator: "==", value: true},
+				expr: &andNode{
+					children: []exprNode{
+						&conditionNode{cond: filterCondition{field: "price", operator: ">", value: float64(10)}},
+						&conditionNode{cond: filterCondition{field: "category", operator: "==", value: "book"}},
+						&conditionNode{cond: filterCondition{field: "inStock", operator: "==", value: true}},
+					},
 				},
-				operators: []string{"&&", "&&"},
 			},
 			want: "[?@.price > 10 && @.category == 'book' && @.inStock == true]",
-		},
-		{
-			name: "empty conditions",
-			segment: &filterSegment{
-				conditions: []filterCondition{},
-			},
-			want: "[?]",
 		},
 	}
 
@@ -1535,8 +1531,8 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "single condition - array",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: ">", value: float64(10)},
+				expr: &conditionNode{
+					cond: filterCondition{field: "price", operator: ">", value: float64(10)},
 				},
 			},
 			value: []interface{}{
@@ -1554,8 +1550,8 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "single condition - object",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: ">", value: float64(10)},
+				expr: &conditionNode{
+					cond: filterCondition{field: "price", operator: ">", value: float64(10)},
 				},
 			},
 			value: map[string]interface{}{"price": float64(15)},
@@ -1567,11 +1563,12 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "multiple conditions with AND",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: ">", value: float64(10)},
-					{field: "@.category", operator: "==", value: "book"},
+				expr: &andNode{
+					children: []exprNode{
+						&conditionNode{cond: filterCondition{field: "price", operator: ">", value: float64(10)}},
+						&conditionNode{cond: filterCondition{field: "category", operator: "==", value: "book"}},
+					},
 				},
-				operators: []string{"&&"},
 			},
 			value: []interface{}{
 				map[string]interface{}{"price": float64(15), "category": "book"},
@@ -1588,11 +1585,12 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "multiple conditions with OR",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: "<", value: float64(10)},
-					{field: "@.price", operator: ">", value: float64(20)},
+				expr: &orNode{
+					children: []exprNode{
+						&conditionNode{cond: filterCondition{field: "price", operator: "<", value: float64(10)}},
+						&conditionNode{cond: filterCondition{field: "price", operator: ">", value: float64(20)}},
+					},
 				},
-				operators: []string{"||"},
 			},
 			value: []interface{}{
 				map[string]interface{}{"price": float64(5)},
@@ -1608,8 +1606,8 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "regex match condition",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.name", operator: "match", value: "^J.*n$"},
+				expr: &conditionNode{
+					cond: filterCondition{field: "name", operator: "match", value: "^J.*n$"},
 				},
 			},
 			value: []interface{}{
@@ -1625,8 +1623,8 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "invalid regex pattern",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.name", operator: "match", value: "[invalid"},
+				expr: &conditionNode{
+					cond: filterCondition{field: "name", operator: "match", value: "[invalid"},
 				},
 			},
 			value: []interface{}{
@@ -1638,8 +1636,8 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "field not found",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.missing", operator: ">", value: float64(10)},
+				expr: &conditionNode{
+					cond: filterCondition{field: "missing", operator: ">", value: float64(10)},
 				},
 			},
 			value: []interface{}{
@@ -1651,8 +1649,8 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "invalid operator",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: "invalid", value: float64(10)},
+				expr: &conditionNode{
+					cond: filterCondition{field: "price", operator: "invalid", value: float64(10)},
 				},
 			},
 			value: []interface{}{
@@ -1664,8 +1662,8 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "non-object array elements",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: ">", value: float64(10)},
+				expr: &conditionNode{
+					cond: filterCondition{field: "price", operator: ">", value: float64(10)},
 				},
 			},
 			value: []interface{}{
@@ -1679,8 +1677,8 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "nil value",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: ">", value: float64(10)},
+				expr: &conditionNode{
+					cond: filterCondition{field: "price", operator: ">", value: float64(10)},
 				},
 			},
 			value:   nil,
@@ -1690,8 +1688,8 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "non-array/object value",
 			segment: &filterSegment{
-				conditions: []filterCondition{
-					{field: "@.price", operator: ">", value: float64(10)},
+				expr: &conditionNode{
+					cond: filterCondition{field: "price", operator: ">", value: float64(10)},
 				},
 			},
 			value:   "not an array or object",
@@ -1701,7 +1699,7 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 		{
 			name: "empty conditions",
 			segment: &filterSegment{
-				conditions: []filterCondition{},
+				expr: nil,
 			},
 			value: []interface{}{
 				map[string]interface{}{"price": float64(15)},

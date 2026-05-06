@@ -1,6 +1,7 @@
 package jsonpath
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -834,6 +835,64 @@ func TestParseFilterValue(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("parseFilterValue() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOperatorPrecedence(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		document interface{}
+		expected []interface{}
+	}{
+		{
+			name: "AND higher than OR",
+			path: `$[?(@.a==1||@.b==2&&@.c==3)]`,
+			document: map[string]interface{}{
+				"a": 1, "b": 0, "c": 0,
+			},
+			expected: []interface{}{map[string]interface{}{"a": 1, "b": 0, "c": 0}},
+		},
+		{
+			name: "OR with AND",
+			path: `$[?(@.a==0||@.b==2&&@.c==3)]`,
+			document: map[string]interface{}{
+				"a": 0, "b": 2, "c": 3,
+			},
+			expected: []interface{}{map[string]interface{}{"a": 0, "b": 2, "c": 3}},
+		},
+		{
+			name: "AND with OR",
+			path: `$[?(@.a==0||@.b==2&&@.c==0)]`,
+			document: map[string]interface{}{
+				"a": 0, "b": 2, "c": 0,
+			},
+			expected: []interface{}{map[string]interface{}{"a": 0, "b": 2, "c": 0}},
+		},
+		{
+			name: "Parentheses override precedence",
+			path: `$[?((@.a==1||@.b==2)&&@.c==3)]`,
+			document: map[string]interface{}{
+				"a": 1, "b": 0, "c": 3,
+			},
+			expected: []interface{}{map[string]interface{}{"a": 1, "b": 0, "c": 3}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Query(tt.document, tt.path)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			expectedJSON, _ := json.Marshal(tt.expected)
+			resultJSON, _ := json.Marshal(result)
+
+			if string(expectedJSON) != string(resultJSON) {
+				t.Errorf("Expected %s, got %s", expectedJSON, resultJSON)
 			}
 		})
 	}

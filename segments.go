@@ -3,7 +3,6 @@ package jsonpath
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -458,8 +457,7 @@ func (s *sliceSegment) String() string {
 
 // 过滤器段
 type filterSegment struct {
-	conditions []filterCondition
-	operators  []string
+	expr exprNode
 }
 
 // evaluate 评估过滤器段
@@ -469,9 +467,14 @@ func (s *filterSegment) evaluate(data interface{}) ([]interface{}, error) {
 		return nil, nil
 	}
 
+	// If no expression, return nil
+	if s.expr == nil {
+		return nil, nil
+	}
+
 	// 处理 map 类型
 	if m, ok := data.(map[string]interface{}); ok {
-		result, err := s.evaluateConditions(m)
+		result, err := s.expr.evaluate(m)
 		if err != nil {
 			return nil, err
 		}
@@ -486,9 +489,9 @@ func (s *filterSegment) evaluate(data interface{}) ([]interface{}, error) {
 		var results []interface{}
 		for _, item := range arr {
 			if m, ok := item.(map[string]interface{}); ok {
-				result, err := s.evaluateConditions(m)
+				result, err := s.expr.evaluate(m)
 				if err != nil {
-					return nil, err // 返回错误而不是继续处理
+					return nil, err
 				}
 				if result {
 					results = append(results, m)
@@ -501,84 +504,30 @@ func (s *filterSegment) evaluate(data interface{}) ([]interface{}, error) {
 	return nil, nil
 }
 
-// evaluateConditions 评估所有条件
-func (s *filterSegment) evaluateConditions(item interface{}) (bool, error) {
-	if len(s.conditions) == 0 {
-		return false, nil
-	}
-
-	// Evaluate first condition
-	result, err := s.evaluateCondition(s.conditions[0], item)
-	if err != nil {
-		return false, err
-	}
-
-	// Evaluate remaining conditions with operators
-	for i := 1; i < len(s.conditions); i++ {
-		nextResult, err := s.evaluateCondition(s.conditions[i], item)
-		if err != nil {
-			return false, err
-		}
-
-		// Apply logical operator
-		switch s.operators[i-1] {
-		case "&&":
-			result = result && nextResult
-		case "||":
-			result = result || nextResult
-		default:
-			return false, fmt.Errorf("invalid operator: %s", s.operators[i-1])
-		}
-	}
-
-	return result, nil
-}
-
-// evaluateCondition evaluates a single condition against an item
-func (s *filterSegment) evaluateCondition(cond filterCondition, item interface{}) (bool, error) {
-	// Get field value
-	value, err := getFieldValue(item, cond.field)
-	if err != nil {
-		return false, nil // 字段不存在时返回 false，而不是错误
-	}
-
-	// Compare values
-	switch cond.operator {
-	case "match":
-		str, ok := value.(string)
-		if !ok {
-			return false, nil
-		}
-		pattern, ok := cond.value.(string)
-		if !ok {
-			return false, nil
-		}
-		re, err := regexp.Compile(pattern)
-		if err != nil {
-			return false, nil
-		}
-		return re.MatchString(str), nil
-	default:
-		result, err := compareValues(value, cond.operator, cond.value)
-		if err != nil {
-			return false, fmt.Errorf("invalid operator: %s", cond.operator)
-		}
-		return result, nil
-	}
-}
-
 // String 返回过滤器段的字符串表示
 func (s *filterSegment) String() string {
-	var result strings.Builder
-	result.WriteString("[?")
-	for i, cond := range s.conditions {
-		if i > 0 {
-			result.WriteString(" " + s.operators[i-1] + " ")
+	return "[?" + exprToString(s.expr) + "]"
+}
+
+func exprToString(node exprNode) string {
+	switch n := node.(type) {
+	case *conditionNode:
+		return n.cond.String()
+	case *andNode:
+		parts := make([]string, len(n.children))
+		for i, child := range n.children {
+			parts[i] = exprToString(child)
 		}
-		result.WriteString(cond.String())
+		return strings.Join(parts, " && ")
+	case *orNode:
+		parts := make([]string, len(n.children))
+		for i, child := range n.children {
+			parts[i] = exprToString(child)
+		}
+		return strings.Join(parts, " || ")
+	default:
+		return ""
 	}
-	result.WriteString("]")
-	return result.String()
 }
 
 // String returns the string representation of a filter condition
