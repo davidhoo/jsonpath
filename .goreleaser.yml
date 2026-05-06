@@ -2,6 +2,10 @@ builds:
   - main: ./cmd/jp
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/davidhoo/jsonpath.Version={{ .Version }}
     goos:
       - linux
       - darwin
