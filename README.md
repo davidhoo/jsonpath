@@ -36,6 +36,12 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
 
 ## What's New
 
+### v2.0.2
+- Bug fixes
+  - Fixed stdin reading when no `-f` flag is specified (#6)
+  - Added `-f -` support for reading from stdin (#6)
+  - Fixed gosec security check failures (#5)
+
 ### v2.0.1
 - Bug fixes and improvements
   - Fixed minor issues from the initial 2.0.0 release
