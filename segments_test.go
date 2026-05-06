@@ -1,6 +1,7 @@
 package jsonpath
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -156,7 +157,7 @@ func TestRecursiveCollect(t *testing.T) {
 		{
 			name:  "simple array",
 			value: []interface{}{1, 2, 3},
-			want:  []interface{}{1, 2, 3},
+			want:  []interface{}{[]interface{}{1, 2, 3}, 1, 2, 3},
 		},
 		{
 			name: "nested array",
@@ -165,7 +166,7 @@ func TestRecursiveCollect(t *testing.T) {
 				[]interface{}{2, 3},
 				4,
 			},
-			want: []interface{}{1, []interface{}{2, 3}, 2, 3, 4},
+			want: []interface{}{[]interface{}{1, []interface{}{2, 3}, 4}, 1, []interface{}{2, 3}, 2, 3, 4},
 		},
 		{
 			name: "simple object",
@@ -173,7 +174,7 @@ func TestRecursiveCollect(t *testing.T) {
 				"a": 1,
 				"b": 2,
 			},
-			want: []interface{}{1, 2},
+			want: []interface{}{map[string]interface{}{"a": 1, "b": 2}, 1, 2},
 		},
 		{
 			name: "nested object",
@@ -185,7 +186,7 @@ func TestRecursiveCollect(t *testing.T) {
 				},
 				"e": 4,
 			},
-			want: []interface{}{1, map[string]interface{}{"c": 2, "d": 3}, 2, 3, 4},
+			want: []interface{}{map[string]interface{}{"a": 1, "b": map[string]interface{}{"c": 2, "d": 3}, "e": 4}, 1, map[string]interface{}{"c": 2, "d": 3}, 2, 3, 4},
 		},
 		{
 			name: "mixed nested structure",
@@ -198,6 +199,7 @@ func TestRecursiveCollect(t *testing.T) {
 				"e": 6,
 			},
 			want: []interface{}{
+				map[string]interface{}{"a": []interface{}{1, 2}, "b": map[string]interface{}{"c": []interface{}{3, 4}, "d": 5}, "e": 6},
 				[]interface{}{1, 2},
 				1, 2,
 				map[string]interface{}{"c": []interface{}{3, 4}, "d": 5},
@@ -210,12 +212,12 @@ func TestRecursiveCollect(t *testing.T) {
 		{
 			name:  "primitive value",
 			value: 42,
-			want:  nil,
+			want:  []interface{}{42},
 		},
 		{
 			name:  "nil value",
 			value: nil,
-			want:  nil,
+			want:  []interface{}{nil},
 		},
 		{
 			name: "empty structures",
@@ -223,7 +225,7 @@ func TestRecursiveCollect(t *testing.T) {
 				"a": []interface{}{},
 				"b": map[string]interface{}{},
 			},
-			want: []interface{}{[]interface{}{}, map[string]interface{}{}},
+			want: []interface{}{map[string]interface{}{"a": []interface{}{}, "b": map[string]interface{}{}}, []interface{}{}, map[string]interface{}{}},
 		},
 	}
 
@@ -426,8 +428,8 @@ func TestNameSegmentEvaluate(t *testing.T) {
 			}},
 		},
 		{
-			name:    "field not found",
-			segment: &nameSegment{name: "phone"},
+			name:        "field not found",
+			segment:     &nameSegment{name: "phone"},
 			value: map[string]interface{}{
 				"name": "John",
 				"age":  30,
@@ -436,11 +438,10 @@ func TestNameSegmentEvaluate(t *testing.T) {
 			errContains: "field phone not found",
 		},
 		{
-			name:        "value is not an object",
-			segment:     &nameSegment{name: "name"},
-			value:       "not an object",
-			wantErr:     true,
-			errContains: "value is not an object",
+			name:    "value is not an object",
+			segment: &nameSegment{name: "name"},
+			value:   "not an object",
+			want:    []interface{}{},
 		},
 		{
 			name:    "function call without arguments",
@@ -1464,26 +1465,26 @@ func TestWildcardSegmentEvaluate(t *testing.T) {
 		{
 			name:    "nil value",
 			value:   nil,
-			want:    nil,
-			wantErr: true,
+			want:    []interface{}{},
+			wantErr: false,
 		},
 		{
 			name:    "string value",
 			value:   "not an array or object",
-			want:    nil,
-			wantErr: true,
+			want:    []interface{}{},
+			wantErr: false,
 		},
 		{
 			name:    "number value",
 			value:   42,
-			want:    nil,
-			wantErr: true,
+			want:    []interface{}{},
+			wantErr: false,
 		},
 		{
 			name:    "boolean value",
 			value:   true,
-			want:    nil,
-			wantErr: true,
+			want:    []interface{}{},
+			wantErr: false,
 		},
 	}
 
@@ -1724,6 +1725,66 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 				} else if !reflect.DeepEqual(got, tt.want) {
 					t.Errorf("filterSegment.evaluate() = %v, want %v", got, tt.want)
 				}
+			}
+		})
+	}
+}
+
+func TestRecursiveDescentIncludesRoot(t *testing.T) {
+	tests := []struct {
+		name     string
+		document interface{}
+		path     string
+		expected []interface{}
+	}{
+		{
+			name: "Recursive descent with name",
+			document: map[string]interface{}{
+				"name": "root",
+				"child": map[string]interface{}{
+					"name": "child1",
+				},
+			},
+			path:     `$..name`,
+			expected: []interface{}{"root", "child1"},
+		},
+		{
+			name: "Recursive descent with value",
+			document: map[string]interface{}{
+				"value": 1,
+			},
+			path:     `$..value`,
+			expected: []interface{}{1},
+		},
+		{
+			name: "Recursive descent wildcard",
+			document: map[string]interface{}{
+				"a": 1,
+				"b": 2,
+			},
+			path:     `$..*`,
+			expected: []interface{}{1, 2},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Query(tt.document, tt.path)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			expectedJSON, _ := json.Marshal(tt.expected)
+			var resultJSON []byte
+			switch result.(type) {
+			case []interface{}:
+				resultJSON, _ = json.Marshal(result)
+			default:
+				resultJSON, _ = json.Marshal([]interface{}{result})
+			}
+
+			if string(expectedJSON) != string(resultJSON) {
+				t.Errorf("Expected %s, got %s", expectedJSON, resultJSON)
 			}
 		})
 	}

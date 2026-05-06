@@ -159,7 +159,7 @@ func (s *nameSegment) evaluate(value interface{}) ([]interface{}, error) {
 	// 处理对象字段访问
 	obj, ok := value.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("value is not an object")
+		return []interface{}{}, nil
 	}
 
 	val, exists := obj[s.name]
@@ -214,7 +214,7 @@ func (s *wildcardSegment) evaluate(value interface{}) ([]interface{}, error) {
 	case map[string]interface{}:
 		return mapToArray(v), nil
 	default:
-		return nil, fmt.Errorf("value is neither array nor object")
+		return []interface{}{}, nil
 	}
 }
 
@@ -235,6 +235,7 @@ type recursiveSegment struct{}
 
 func (s *recursiveSegment) evaluate(value interface{}) ([]interface{}, error) {
 	var result []interface{}
+	result = append(result, value)
 	err := s.recursiveCollect(value, &result)
 	return result, err
 }
