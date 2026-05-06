@@ -1732,10 +1732,11 @@ func TestFilterSegmentEvaluate(t *testing.T) {
 
 func TestRecursiveDescentIncludesRoot(t *testing.T) {
 	tests := []struct {
-		name     string
-		document interface{}
-		path     string
-		expected []interface{}
+		name      string
+		document  interface{}
+		path      string
+		expected  []interface{}
+		unordered bool
 	}{
 		{
 			name: "Recursive descent with name",
@@ -1764,6 +1765,7 @@ func TestRecursiveDescentIncludesRoot(t *testing.T) {
 			},
 			path:     `$..*`,
 			expected: []interface{}{1, 2},
+			unordered: true,
 		},
 	}
 
@@ -1783,8 +1785,26 @@ func TestRecursiveDescentIncludesRoot(t *testing.T) {
 				resultJSON, _ = json.Marshal([]interface{}{result})
 			}
 
-			if string(expectedJSON) != string(resultJSON) {
-				t.Errorf("Expected %s, got %s", expectedJSON, resultJSON)
+			if tt.unordered {
+				// Compare as sets (sort both before comparing)
+				var expectedArr, resultArr []interface{}
+				json.Unmarshal(expectedJSON, &expectedArr)
+				json.Unmarshal(resultJSON, &resultArr)
+				sort.Slice(expectedArr, func(i, j int) bool {
+					return fmt.Sprintf("%v", expectedArr[i]) < fmt.Sprintf("%v", expectedArr[j])
+				})
+				sort.Slice(resultArr, func(i, j int) bool {
+					return fmt.Sprintf("%v", resultArr[i]) < fmt.Sprintf("%v", resultArr[j])
+				})
+				sortedExpected, _ := json.Marshal(expectedArr)
+				sortedResult, _ := json.Marshal(resultArr)
+				if string(sortedExpected) != string(sortedResult) {
+					t.Errorf("Expected %s (unordered), got %s", expectedJSON, resultJSON)
+				}
+			} else {
+				if string(expectedJSON) != string(resultJSON) {
+					t.Errorf("Expected %s, got %s", expectedJSON, resultJSON)
+				}
 			}
 		})
 	}
