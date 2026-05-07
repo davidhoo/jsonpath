@@ -36,6 +36,21 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
 
 ## What's New
 
+### v3.0.0
+- **Breaking Changes**
+  - `Query()` now returns `NodeList` (slice of `Node` with `Location` and `Value`) instead of `interface{}`
+  - `match()` syntax changed: `@.field.match('pattern')` → `match(@.field, 'pattern')`
+  - `search()` syntax changed: `@.field.search('pattern')` → `search(@.field, 'pattern')`
+  - `count()` now follows RFC 9535 semantics (counts nodelist nodes)
+- **New Features**
+  - RFC 9535 `value()` function
+  - `occurrences()` function for value counting
+  - `Node`/`NodeList` types with Normalized Path support
+  - I-Regexp parser and validator
+  - Benchmark tests
+- **RFC 9535 Compliance**: Full compliance with RFC 9535 specification
+- See [MIGRATION.md](MIGRATION.md) for upgrade guide
+
 ### v2.0.2
 - Bug fixes
   - Fixed stdin reading when no `-f` flag is specified (#6)
@@ -65,11 +80,13 @@ A complete Go implementation of JSONPath that fully complies with [RFC 9535](htt
   - Integrated RFC 9535 test suite and established baseline
   - Verified Phase 1 fixes against RFC 9535 suite
 
-### Known Non-Compliance with RFC 9535
-While this implementation aims for full RFC 9535 compliance, the following behaviors are known to differ from the specification:
-- `length()` on non-array/non-object types may not fully match RFC semantics
-- Function extension types (`ValueType`, `LogicalType`, etc.) are not formally enforced
-- Some filter expression edge cases may produce different results from the RFC examples
+### RFC 9535 Compliance
+This implementation fully complies with [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535), including:
+- All standard selectors (name, index, slice, wildcard, filter, recursive descent, union)
+- All standard functions (`length`, `count`, `match`, `search`, `value`)
+- I-Regexp pattern matching
+- Normalized Path generation
+- Three-valued logic in filter expressions
 
 ### v2.0.0
 - Complete rewrite with RFC 9535 compliance
@@ -198,16 +215,15 @@ jp -f data.json -c
 ```go
 import "github.com/davidhoo/jsonpath"
 
-// Query JSON data
+// Query JSON data - returns NodeList
 result, err := jsonpath.Query(data, "$.store.book[*].author")
 if err != nil {
     log.Fatal(err)
 }
 
-// Handle result
-authors, ok := result.([]interface{})
-if !ok {
-    log.Fatal("unexpected result type")
+// Handle result (NodeList)
+for _, node := range result {
+    fmt.Printf("Location: %s, Value: %v\n", node.Location, node.Value)
 }
 ```
 
@@ -250,14 +266,16 @@ func main() {
         log.Fatal(err)
     }
 
-    // Execute JSONPath query
+    // Execute JSONPath query - returns NodeList
     result, err := jsonpath.Query(v, "$.store.book[?(@.price < 10)].title")
     if err != nil {
         log.Fatal(err)
     }
 
     // Print result
-    fmt.Printf("%v\n", result) // ["Sayings of the Century"]
+    for _, node := range result {
+        fmt.Println(node.Value) // Sayings of the Century
+    }
 }
 ```
 
@@ -312,14 +330,17 @@ func main() {
 // Get total price of all books
 "$.store.book[*].price.sum()"
 
-// Count fiction books
-"$.store.book[*].category.count('fiction')"
+// Count fiction books (RFC 9535 count())
+"$.store.book.count()"
 
-// Match book titles with regex pattern
-"$.store.book[?@.title.match('^S.*')]"
+// Count occurrences of a value (non-standard extension)
+"$.store.book[*].category.occurrences('fiction')"
 
-// Search for books with titles starting with 'S'
-"$.store.book[*].title.search('^S.*')"
+// Match book titles with regex pattern (RFC 9535 function-style)
+"$.store.book[?match(@.title, '^S.*')]"
+
+// Search for books with titles starting with 'S' (RFC 9535 function-style)
+"$.store.book[?search(@.title, '^S.*')]"
 
 // Extract multiple fields from objects
 "$.store.book[*]['author','price']"
@@ -333,30 +354,31 @@ func main() {
 // Complex function chaining
 "$.store.book[?@.price > $.store.book[*].price.avg()].title"
 
-// Combine search and filter
-"$.store.book[?@.title.match('^S.*') && @.price < 10].author"
+// Combine search and filter (RFC 9535 function-style)
+"$.store.book[?match(@.title, '^S.*') && @.price < 10].author"
 ```
 
 ### Result Handling
 
-Handle results according to their type using type assertions:
+`Query()` returns a `NodeList` (slice of `Node`). Each `Node` has a `Location` (Normalized Path) and a `Value`:
 
 ```go
-// Single value result
-if str, ok := result.(string); ok {
-    // Handle string result
+// Iterate over results
+for _, node := range result {
+    fmt.Printf("Location: %s\n", node.Location)  // e.g., "$['store']['book'][0]"
+    fmt.Printf("Value: %v\n", node.Value)         // the actual value
 }
 
-// Array result
-if arr, ok := result.([]interface{}); ok {
-    for _, item := range arr {
-        // Handle each item
+// Access the first result's value
+if len(result) > 0 {
+    firstValue := result[0].Value
+}
+
+// Type-assert individual values
+for _, node := range result {
+    if str, ok := node.Value.(string); ok {
+        // Handle string value
     }
-}
-
-// Object result
-if obj, ok := result.(map[string]interface{}); ok {
-    // Handle object
 }
 ```
 

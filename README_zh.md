@@ -36,6 +36,21 @@
 
 ## 新特性
 
+### v3.0.0
+- **破坏性变更**
+  - `Query()` 现在返回 `NodeList`（包含 `Location` 和 `Value` 的 `Node` 切片）而非 `interface{}`
+  - `match()` 语法变更：`@.field.match('pattern')` → `match(@.field, 'pattern')`
+  - `search()` 语法变更：`@.field.search('pattern')` → `search(@.field, 'pattern')`
+  - `count()` 现在遵循 RFC 9535 语义（计算节点列表中的节点数）
+- **新功能**
+  - RFC 9535 `value()` 函数
+  - `occurrences()` 函数用于计算值出现次数
+  - `Node`/`NodeList` 类型，支持规范化路径
+  - I-Regexp 解析器和验证器
+  - 基准测试
+- **RFC 9535 合规性**：完全符合 RFC 9535 规范
+- 参见 [MIGRATION.md](MIGRATION.md) 升级指南
+
 ### v2.0.0
 - 完全重写以符合 RFC 9535 标准
   - 完整实现 JSONPath 规范（RFC 9535）
@@ -64,11 +79,13 @@
   - 集成 RFC 9535 测试套件并建立基准
   - 验证第一阶段修复是否通过 RFC 9535 测试套件
 
-### 已知的 RFC 9535 不合规行为
-虽然本实现旨在完全符合 RFC 9535 标准，但以下行为已知与规范存在差异：
-- 对非数组/非对象类型的 `length()` 可能不完全符合 RFC 语义
-- 函数扩展类型（`ValueType`、`LogicalType` 等）未被正式强制执行
-- 某些过滤表达式的边界情况可能产生与 RFC 示例不同的结果
+### 已知的 RFC 9535 合规性
+本实现完全符合 [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535) 标准，包括：
+- 所有标准选择器（名称、索引、切片、通配符、过滤、递归查找、联合）
+- 所有标准函数（`length`、`count`、`match`、`search`、`value`）
+- I-Regexp 模式匹配
+- 规范化路径生成
+- 过滤表达式中的三值逻辑
 
 ### v1.0.4
 
@@ -185,16 +202,15 @@ jp -f data.json -c
 ```go
 import "github.com/davidhoo/jsonpath"
 
-// 查询 JSON 数据
+// 查询 JSON 数据 - 返回 NodeList
 result, err := jsonpath.Query(data, "$.store.book[*].author")
 if err != nil {
     log.Fatal(err)
 }
 
-// 处理结果
-authors, ok := result.([]interface{})
-if !ok {
-    log.Fatal("unexpected result type")
+// 处理结果（NodeList）
+for _, node := range result {
+    fmt.Printf("位置: %s, 值: %v\n", node.Location, node.Value)
 }
 ```
 
@@ -237,14 +253,16 @@ func main() {
         log.Fatal(err)
     }
 
-    // 执行 JSONPath 查询
+    // 执行 JSONPath 查询 - 返回 NodeList
     result, err := jsonpath.Query(v, "$.store.book[?(@.price < 10)].title")
     if err != nil {
         log.Fatal(err)
     }
 
     // 打印结果
-    fmt.Printf("%v\n", result) // ["Sayings of the Century"]
+    for _, node := range result {
+        fmt.Println(node.Value) // Sayings of the Century
+    }
 }
 ```
 
@@ -299,14 +317,17 @@ func main() {
 // 获取所有书籍的总价
 "$.store.book[*].price.sum()"
 
-// 统计小说类书籍数量
-"$.store.book[*].category.count('fiction')"
+// 统计小说类书籍数量 (RFC 9535 count())
+"$.store.book.count()"
 
-// 使用正则表达式匹配书名
-"$.store.book[?@.title.match('^S.*')]"
+// 统计值出现次数（非标准扩展）
+"$.store.book[*].category.occurrences('fiction')"
 
-// 搜索以 S 开头的书名
-"$.store.book[*].title.search('^S.*')"
+// 使用正则表达式匹配书名（RFC 9535 函数式语法）
+"$.store.book[?match(@.title, '^S.*')]"
+
+// 搜索以 S 开头的书名（RFC 9535 函数式语法）
+"$.store.book[?search(@.title, '^S.*')]"
 
 // 函数链式调用
 "$.store.book[?@.price > 10].title.length()"
@@ -314,8 +335,8 @@ func main() {
 // 复杂的函数链式调用
 "$.store.book[?@.price > $.store.book[*].price.avg()].title"
 
-// 组合搜索和过滤条件
-"$.store.book[?@.title.match('^S.*') && @.price < 10].author"
+// 组合搜索和过滤条件（RFC 9535 函数式语法）
+"$.store.book[?match(@.title, '^S.*') && @.price < 10].author"
 
 // 从对象中提取多个字段
 "$.store.book[*]['author','price']"
@@ -326,24 +347,25 @@ func main() {
 
 ### 结果处理方法
 
-根据结果类型使用类型断言处理结果：
+`Query()` 返回 `NodeList`（`Node` 切片）。每个 `Node` 包含 `Location`（规范化路径）和 `Value`：
 
 ```go
-// 单个值结果
-if str, ok := result.(string); ok {
-    // 处理字符串结果
+// 遍历结果
+for _, node := range result {
+    fmt.Printf("位置: %s\n", node.Location)  // 例如 "$['store']['book'][0]"
+    fmt.Printf("值: %v\n", node.Value)       // 实际值
 }
 
-// 数组结果
-if arr, ok := result.([]interface{}); ok {
-    for _, item := range arr {
-        // 处理每个元素
+// 访问第一个结果的值
+if len(result) > 0 {
+    firstValue := result[0].Value
+}
+
+// 类型断言
+for _, node := range result {
+    if str, ok := node.Value.(string); ok {
+        // 处理字符串值
     }
-}
-
-// 对象结果
-if obj, ok := result.(map[string]interface{}); ok {
-    // 处理对象
 }
 ```
 
