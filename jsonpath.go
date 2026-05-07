@@ -16,29 +16,41 @@ func Query(data interface{}, path string) (interface{}, error) {
 		data = parsedData
 	}
 
-	// Parse path
-	segments, err := parse(path)
+	// Parse path into old segments
+	oldSegments, err := parse(path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid path: %v", err)
 	}
 
-	// Evaluate segments
-	result := []interface{}{data}
-	for _, seg := range segments {
-		newResult := make([]interface{}, 0)
-		for _, val := range result {
-			evaluated, err := seg.evaluate(val)
+	// Convert to v3 segments
+	v3Segments := wrapSegments(oldSegments)
+
+	// Build root node
+	root := Node{Location: "$", Value: data}
+
+	// Evaluate segments using v3 pipeline
+	nodeList := NodeList{root}
+	for _, seg := range v3Segments {
+		var newNodeList NodeList
+		for _, n := range nodeList {
+			evaluated, err := seg.evaluate(n)
 			if err != nil {
 				return nil, err
 			}
-			newResult = append(newResult, evaluated...)
+			newNodeList = append(newNodeList, evaluated...)
 		}
-		result = newResult
+		nodeList = newNodeList
 	}
 
-	// 根据最后一个段的类型决定返回格式
-	if len(segments) > 0 {
-		switch segments[len(segments)-1].(type) {
+	// Extract values from nodelist for backward compatibility
+	result := make([]interface{}, len(nodeList))
+	for i, n := range nodeList {
+		result[i] = n.Value
+	}
+
+	// Determine return format based on last segment type
+	if len(oldSegments) > 0 {
+		switch oldSegments[len(oldSegments)-1].(type) {
 		case *filterSegment:
 			return result, nil
 		case *functionSegment:
@@ -49,7 +61,7 @@ func Query(data interface{}, path string) (interface{}, error) {
 		}
 	}
 
-	// 对于其他情况，如果只有一个结果，返回单个值
+	// For other cases, return single value if only one result
 	if len(result) == 1 {
 		return result[0], nil
 	}
