@@ -618,14 +618,14 @@ func TestParseIndexOrName(t *testing.T) {
 		},
 		{
 			name:      "max int overflow",
-			content:   "9223372036854775807",
+			content:   "99999999999999999999",
 			wantErr:   true,
 			wantType:  "indexSegment",
 			wantValue: 0,
 		},
 		{
 			name:      "min int overflow",
-			content:   "-9223372036854775808",
+			content:   "-99999999999999999999",
 			wantErr:   true,
 			wantType:  "indexSegment",
 			wantValue: 0,

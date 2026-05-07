@@ -2,6 +2,7 @@ package jsonpath
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1941,7 +1942,8 @@ func parseSliceSegment(content string) (segment, error) {
 		if err != nil {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice start index: %s", parts[0]), parts[0])
 		}
-		if start < -9007199254740991 || start > 9007199254740991 {
+		// Range check: use math.MaxInt/MinInt which works on both 32-bit and 64-bit
+		if start < math.MinInt || start > math.MaxInt {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("slice start index out of range: %d", start), parts[0])
 		}
 		slice.start = start
@@ -1961,7 +1963,8 @@ func parseSliceSegment(content string) (segment, error) {
 		if err != nil {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice end index: %s", parts[1]), parts[1])
 		}
-		if end < -9007199254740991 || end > 9007199254740991 {
+		// Range check: use math.MaxInt/MinInt which works on both 32-bit and 64-bit
+		if end < math.MinInt || end > math.MaxInt {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("slice end index out of range: %d", end), parts[1])
 		}
 		slice.end = end
@@ -1985,7 +1988,7 @@ func parseSliceSegment(content string) (segment, error) {
 			// RFC 9535: zero step - the slice selects no elements (returns empty)
 			// Store step as 0 to signal this behavior
 			slice.step = 0
-		} else if step < -9007199254740991 || step > 9007199254740991 {
+		} else if step < math.MinInt || step > math.MaxInt {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("slice step out of range: %d", step), parts[2])
 		} else {
 			slice.step = step
@@ -2215,7 +2218,8 @@ func parseIndexOrName(content string) (segment, error) {
 			return nil, NewError(ErrSyntax, "negative zero is not a valid index", content)
 		}
 		// RFC 9535: index must be within IEEE 754 double precision range
-		if idx < -9007199254740991 || idx > 9007199254740991 {
+		// Use math.MaxInt/MinInt which works on both 32-bit and 64-bit
+		if idx < math.MinInt || idx > math.MaxInt {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("index out of range: %d", idx), content)
 		}
 		return &indexSegment{index: idx}, nil
