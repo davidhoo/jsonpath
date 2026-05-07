@@ -11,7 +11,8 @@
 
 ## 特性
 
-- 完整实现 RFC 9535 标准
+- **RFC 9535 完全合规** - 通过全部 703 项合规测试
+- **完整的 JSONPath 支持**
   - 根节点访问（`$`）
   - 子节点访问（`.key` 或 `['key']`）
   - 递归查找（`..`）
@@ -21,131 +22,26 @@
   - 多重索引（`[1,2,3]`）
   - 多字段名称（`['name','age']`）
   - 过滤表达式（`[?(@.price < 10)]`）
-- 命令行工具（`jp`）
+  - 存在性测试（`[?@.name]`）
+  - 函数调用（`length()`、`count()`、`match()`、`search()`、`value()`）
+- **命令行工具（`jp`）**
   - 精美的彩色输出
   - JSON 语法高亮
   - 支持文件和标准输入
   - 支持格式化和压缩输出
-  - 友好的错误提示
-  - 完整的 UTF-8 支持，正确显示中文
-- 作为 Go 库使用
-  - 简洁的 API 设计
+  - 规范化路径输出（`--path`）
+- **Go 库**
+  - 返回 `NodeList` 的简洁 API
+  - 每个结果节点包含规范化路径
   - 类型安全的操作
-  - 丰富的示例
   - 详细的文档说明
-
-## 新特性
-
-### v3.0.0
-- **破坏性变更**
-  - `Query()` 现在返回 `NodeList`（包含 `Location` 和 `Value` 的 `Node` 切片）而非 `interface{}`
-  - `match()` 语法变更：`@.field.match('pattern')` → `match(@.field, 'pattern')`
-  - `search()` 语法变更：`@.field.search('pattern')` → `search(@.field, 'pattern')`
-  - `count()` 现在遵循 RFC 9535 语义（计算节点列表中的节点数）
-- **新功能**
-  - RFC 9535 `value()` 函数
-  - `occurrences()` 函数用于计算值出现次数
-  - `Node`/`NodeList` 类型，支持规范化路径
-  - I-Regexp 解析器和验证器
-  - 基准测试
-- **RFC 9535 合规性**：完全符合 RFC 9535 规范
-- 参见 [MIGRATION.md](MIGRATION.md) 升级指南
-
-### v2.0.0
-- 完全重写以符合 RFC 9535 标准
-  - 完整实现 JSONPath 规范（RFC 9535）
-  - 增强的错误处理和报告
-  - 提升性能和可靠性
-  - 更好地支持各种 JSONPath 表达式
-- 破坏性变更
-  - API 变更以符合 RFC 规范
-  - 更新函数签名以提高可用性
-  - 修改错误类型以提供更详细的错误报告
-- 文档更新
-  - 更新文档以反映 RFC 合规性
-  - 添加更多示例和用例
-  - 改进 API 文档
-
-### v2.1.0
-- Bug 修复
-  - `length()` 现在计算 Unicode 字符数而非字节数
-  - 实现正确的运算符优先级（`&&` 优先于 `||`）
-  - 递归查找（`..`）现在包含根节点
-  - 选择器在类型不匹配时返回空结果而非错误
-- 新特性
-  - 存在性测试 `[?@.name]`
-  - 过滤器中支持裸 `@` 引用
-- 改进
-  - 集成 RFC 9535 测试套件并建立基准
-  - 验证第一阶段修复是否通过 RFC 9535 测试套件
-
-### 已知的 RFC 9535 合规性
-本实现完全符合 [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535) 标准，包括：
-- 所有标准选择器（名称、索引、切片、通配符、过滤、递归查找、联合）
-- 所有标准函数（`length`、`count`、`match`、`search`、`value`）
-- I-Regexp 模式匹配
-- 规范化路径生成
-- 过滤表达式中的三值逻辑
-
-### v1.0.4
-
-- 集中管理版本号
-  - 添加 version.go 用于集中版本控制
-  - 更新 cmd/jp 使用集中管理的版本号
-  - 修复中文注释的 UTF-8 编码问题
-
-### v1.0.3
-
-- 增强的过滤表达式
-  - 完整支持逻辑运算符（`&&`、`||`、`!`）
-  - 正确处理复杂的过滤条件
-  - 支持 De Morgan 定律的否定表达式
-  - 改进的数值和字符串比较
-  - 更好的错误提示
-- 改进的 API 设计
-  - 新的简化 `Query` 函数，使用更方便
-  - 弃用 `Compile/Execute` 而改用 `Query`
-  - 更好的错误处理和报告
-- 更新的示例
-  - 新增逻辑运算符示例
-  - 更新代码以使用新的 `Query` 函数
-  - 修复示例中的 UTF-8 编码问题
-
-### v1.0.2
-
-- 增强的过滤表达式
-  - 完整支持逻辑运算符（`&&`、`||`、`!`）
-  - 正确处理复杂的过滤条件
-  - 支持 De Morgan 定律的否定表达式
-  - 改进的数值和字符串比较
-  - 更好的错误提示
-- 增强的彩色输出
-  - 精美的 JSON 语法高亮
-  - 彩色的命令行界面
-  - 提升嵌套结构的可读性
-- 更好的 UTF-8 支持
-  - 修复中文字符显示
-  - 正确处理多字节字符
-
-### v1.0.1
-- 首个稳定版本
-  - 基本的 JSONPath 查询支持
-  - 命令行工具实现
-  - 核心过滤表达式支持
-  - 基本的彩色输出
-  - 初始文档
-  - 基本的错误处理
-  - UTF-8 支持
 
 ## 安装方式
 
-### Homebrew 安装推荐）
+### Homebrew 安装（推荐）
 
 ```bash
-# 添加 tap
 brew tap davidhoo/tap
-
-# 安装 jsonpath
 brew install jsonpath
 ```
 
@@ -161,20 +57,21 @@ go install github.com/davidhoo/jsonpath/cmd/jp@latest
 
 ## 命令行使用方法
 
-### 命令行参数
-
 ```bash
-jp [-p <jsonpath表达式>] [-f <json文件>] [-c]
+jp [-p <jsonpath表达式>] [-f <json文件>] [-c] [--no-color] [--path]
 ```
 
 ### 命令行选项
 
-- `-p` JSONPath 表达式（如果不指定，输出整个 JSON）
-- `-f` JSON 文件路径（如果不指定，从标准输入读取）
-- `-c` 压缩输出（不格式化）
-- `--no-color` 禁用彩色输出
-- `-h` 显示帮助信息
-- `-v` 显示版本信息
+| 选项 | 说明 |
+|------|------|
+| `-p` | JSONPath 表达式（如果不指定，输出整个 JSON） |
+| `-f` | JSON 文件路径（如果不指定，从标准输入读取） |
+| `-c` | 压缩输出（不格式化） |
+| `--no-color` | 禁用彩色输出 |
+| `--path` | 输出规范化路径和值 |
+| `-h` | 显示帮助信息 |
+| `-v` | 显示版本信息 |
 
 ### 命令行示例
 
@@ -193,11 +90,17 @@ echo '{"name": "John"}' | jp -p '$.name'
 
 # 压缩输出
 jp -f data.json -c
+
+# 显示规范化路径
+echo '{"a":1,"b":2}' | jp --path '$.*'
+# 输出:
+# $['a'] 1
+# $['b'] 2
 ```
 
 ## Go 库使用方法
 
-### Go 库基本用法
+### 基本用法
 
 ```go
 import "github.com/davidhoo/jsonpath"
@@ -227,39 +130,25 @@ import (
 )
 
 func main() {
-    // JSON 数据
     data := `{
         "store": {
             "book": [
-                {
-                    "category": "reference",
-                    "author": "Nigel Rees",
-                    "title": "Sayings of the Century",
-                    "price": 8.95
-                },
-                {
-                    "category": "fiction",
-                    "author": "Evelyn Waugh",
-                    "title": "Sword of Honour",
-                    "price": 12.99
-                }
+                {"category": "reference", "author": "Nigel Rees", "title": "Sayings of the Century", "price": 8.95},
+                {"category": "fiction", "author": "Evelyn Waugh", "title": "Sword of Honour", "price": 12.99}
             ]
         }
     }`
 
-    // 解析 JSON
     var v interface{}
     if err := json.Unmarshal([]byte(data), &v); err != nil {
         log.Fatal(err)
     }
 
-    // 执行 JSONPath 查询 - 返回 NodeList
     result, err := jsonpath.Query(v, "$.store.book[?(@.price < 10)].title")
     if err != nil {
         log.Fatal(err)
     }
 
-    // 打印结果
     for _, node := range result {
         fmt.Println(node.Value) // Sayings of the Century
     }
@@ -269,7 +158,7 @@ func main() {
 ### 常用查询示例
 
 ```go
-// 获取所有价格（递归）
+// 获取所有价格（递归查找）
 "$..price"
 
 // 获取特定价格范围的书籍
@@ -278,121 +167,91 @@ func main() {
 // 获取所有作者
 "$.store.book[*].author"
 
-// 获取第一本书
+// 获取第一/最后一本书
 "$.store.book[0]"
-
-// 获取最后一本书
 "$.store.book[-1]"
 
 // 获取前两本书
 "$.store.book[0:2]"
 
-// 获取价格大于 10 且类别为 fiction 的书籍
+// 复杂过滤条件
 "$.store.book[?(@.price > 10 && @.category == 'fiction')]"
 
-// 获取所有非参考类书籍
-"$.store.book[?(!(@.category == 'reference'))]"
+// 存在性测试
+"$[?@.name]"
 
-// 获取价格大于 10 或作者为 Evelyn 的书籍
-"$.store.book[?(@.price > 10 || @.author == 'Evelyn Waugh')]"
-
-// 获取书籍数组的长度
-"$.store.book.length()"
-
-// 获取商店对象的所有键
-"$.store.keys()"
-
-// 获取商店对象的所有值
-"$.store.values()"
-
-// 获取最低书价
-"$.store.book[*].price.min()"
-
-// 获取最高书价
-"$.store.book[*].price.max()"
-
-// 获取平均书价
-"$.store.book[*].price.avg()"
-
-// 获取所有书籍的总价
-"$.store.book[*].price.sum()"
-
-// 统计小说类书籍数量 (RFC 9535 count())
-"$.store.book.count()"
-
-// 统计值出现次数（非标准扩展）
-"$.store.book[*].category.occurrences('fiction')"
-
-// 使用正则表达式匹配书名（RFC 9535 函数式语法）
+// 函数调用（RFC 9535）
 "$.store.book[?match(@.title, '^S.*')]"
+"$.store.book[?search(@.title, 'Century')]"
+"$[?count(@..*) > 5]"
 
-// 搜索以 S 开头的书名（RFC 9535 函数式语法）
-"$.store.book[?search(@.title, '^S.*')]"
-
-// 函数链式调用
-"$.store.book[?@.price > 10].title.length()"
-
-// 复杂的函数链式调用
-"$.store.book[?@.price > $.store.book[*].price.avg()].title"
-
-// 组合搜索和过滤条件（RFC 9535 函数式语法）
-"$.store.book[?match(@.title, '^S.*') && @.price < 10].author"
-
-// 从对象中提取多个字段
-"$.store.book[*]['author','price']"
-
-// 使用通配符提取多个字段
-"$.store.book[*]['title','category']"
+// 非标准扩展
+"$.store.book[*].price.min()"
+"$.store.book[*].price.max()"
+"$.store.book[*].price.avg()"
+"$.store.book[*].price.sum()"
 ```
 
-### 结果处理方法
+### 结果处理
 
-`Query()` 返回 `NodeList`（`Node` 切片）。每个 `Node` 包含 `Location`（规范化路径）和 `Value`：
+`Query()` 返回 `NodeList`（`Node` 切片）。每个 `Node` 包含：
+- `Location` - 规范化路径（例如 `$['store']['book'][0]`）
+- `Value` - 实际值
 
 ```go
-// 遍历结果
 for _, node := range result {
-    fmt.Printf("位置: %s\n", node.Location)  // 例如 "$['store']['book'][0]"
-    fmt.Printf("值: %v\n", node.Value)       // 实际值
+    fmt.Printf("位置: %s\n", node.Location)
+    fmt.Printf("值: %v\n", node.Value)
 }
 
-// 访问第一个结果的值
+// 访问第一个结果
 if len(result) > 0 {
     firstValue := result[0].Value
 }
-
-// 类型断言
-for _, node := range result {
-    if str, ok := node.Value.(string); ok {
-        // 处理字符串值
-    }
-}
 ```
 
-## 实现细节
+## RFC 9535 合规性
 
-1. RFC 9535 标准合规性
-   - 支持所有标准操作符
-   - 标准兼容的语法解析
-   - 标准的结果格式化
+本实现完全符合 [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535) 标准：
 
-2. 过滤器支持
-   - 比较操作符：`<`、`>`、`<=`、`>=`、`==`、`!=`
-   - 逻辑运算符：`&&`、`||`、`!`
-   - 支持复杂的过滤条件
-   - 支持数值和字符串比较
-   - 使用 De Morgan 定律处理否定表达式
-   - 支持带括号的嵌套条件
+- **100% 通过率** - 官方合规测试套件全部通过（703/703）
+- 所有标准选择器（名称、索引、切片、通配符、过滤、递归查找、联合）
+- 所有标准函数（`length`、`count`、`match`、`search`、`value`）
+- I-Regexp 模式匹配（RFC 9485）
+- 规范化路径生成
+- 过滤表达式中的三值逻辑
 
-3. 结果处理
-   - 数组操作返回数组结果
-   - 单值访问返回原始类型
-   - 类型安全的结果处理
+详见 [RFC9535_COMPLIANCE_REPORT.md](docs/RFC9535_COMPLIANCE_REPORT.md)。
 
-4. 错误处理
-   - 详细的错误信息
-   - 语法错误提示
-   - 运行时错误处理
+## 非标准扩展
+
+以下函数是为方便使用而添加的非标准扩展：
+
+| 函数 | 说明 |
+|------|------|
+| `keys()` | 返回对象的排序键列表 |
+| `values()` | 返回对象的值列表 |
+| `min()` | 返回数组中的最小值 |
+| `max()` | 返回数组中的最大值 |
+| `avg()` | 返回数值的平均值 |
+| `sum()` | 返回数值的总和 |
+| `occurrences()` | 统计值在数组中出现的次数 |
+
+## 测试
+
+```bash
+# 运行所有测试
+go test -v ./...
+
+# 运行测试并生成覆盖率报告
+go test -v -coverprofile=coverage.out ./...
+
+# 运行基准测试
+go test -bench=. -benchmem ./...
+
+# 运行 RFC 9535 合规测试
+go test -run TestCTS -v
+```
 
 ## 贡献
 
@@ -402,81 +261,6 @@ for _, node := range result {
 
 MIT License
 
-## 测试
+## 更新日志
 
-### 运行测试
-
-```bash
-# 运行所有测试
-go test -v ./...
-
-# 运行测试并生成覆盖率报告
-go test -v -coverprofile=coverage.out ./...
-
-# 在浏览器中查看覆盖率报告
-go tool cover -html=coverage.out
-
-# 运行基准测试
-go test -bench=. -benchmem ./...
-```
-
-### 测试组织结构
-
-测试套件分为以下几个类别：
-
-- 单元测试：测试单个函数和组件
-- 集成测试：测试组件之间的交互
-- 基准测试：关键路径的性能测试
-- 示例测试：通过示例展示用法
-
-### 测试覆盖率
-
-当前测试覆盖率指标：
-- 总体覆盖率：90%+
-- 核心包覆盖率：90%+
-- 命令行工具覆盖率：90%+
-
-### 编写测试
-
-贡献测试时，请遵循以下准则：
-
-1. 使用表驱动测试处理相似的测试用例
-2. 提供清晰的测试用例描述
-3. 同时测试成功和失败的情况
-4. 包含边缘情况和边界条件
-5. 使用测试套件组织相关功能
-6. 为性能关键代码添加基准测试
-
-良好结构的测试示例：
-
-```go
-func TestParseJSONPath(t *testing.T) {
-    tests := []struct {
-        name     string
-        input    string
-        expected interface{}
-        wantErr  bool
-    }{
-        {
-            name:     "简单路径",
-            input:    "$.store.book",
-            expected: []string{"store", "book"},
-            wantErr:  false,
-        },
-        // 添加更多测试用例...
-    }
-
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            result, err := ParseJSONPath(tt.input)
-            if (err != nil) != tt.wantErr {
-                t.Errorf("ParseJSONPath() error = %v, wantErr %v", err, tt.wantErr)
-                return
-            }
-            if !reflect.DeepEqual(result, tt.expected) {
-                t.Errorf("ParseJSONPath() = %v, want %v", result, tt.expected)
-            }
-        })
-    }
-}
-```
+详见 [CHANGELOG.md](CHANGELOG.md)。
