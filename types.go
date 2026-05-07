@@ -64,6 +64,11 @@ func (n *orNode) evaluate(item interface{}, root interface{}) (bool, error) {
 	return false, nil
 }
 
+// isNonSingularPath checks if a field path contains non-singular selectors (wildcard, slice, multi-index)
+func isNonSingularPath(field string) bool {
+	return strings.Contains(field, "*") || strings.Contains(field, "[") || strings.Contains(field, "..")
+}
+
 // evaluateSingleCondition evaluates a single filter condition against an item
 func evaluateSingleCondition(cond filterCondition, item interface{}, root interface{}) (bool, error) {
 	// Determine the context for field lookup
@@ -79,11 +84,51 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 		return root != nil, nil
 	}
 
+	// Handle non-singular paths (wildcard, slice, multi-index, descendant)
+	if isNonSingularPath(cond.field) {
+		// Build the path expression
+		var pathExpr string
+		if cond.isRoot {
+			pathExpr = "$" + cond.field
+		} else {
+			pathExpr = cond.field
+		}
+
+		// Evaluate the path
+		var results NodeList
+		var err error
+		if cond.isRoot {
+			results, err = Query(root, pathExpr)
+		} else {
+			// For relative paths, wrap the item and adjust the path
+			// e.g., @.field.* becomes $[0].field.* when evaluated against item
+			adjustedPath := "$" + pathExpr
+			tempRoot := map[string]interface{}{"_": item}
+			adjustedPath = "$._" + strings.TrimPrefix(pathExpr, "@")
+			results, err = Query(tempRoot, adjustedPath)
+		}
+		if err != nil {
+			return false, nil
+		}
+		hasResults := len(results) > 0
+		switch cond.operator {
+		case "exists":
+			return hasResults, nil
+		case "not_exists":
+			return !hasResults, nil
+		default:
+			// RFC 9535: non-singular path in comparison is not allowed
+			// Return false for comparison operators
+			return false, nil
+		}
+	}
+
 	var value interface{}
 	var valueErr error
+	var isAbsent bool
 
-	// For root references with complex paths (containing * or [), evaluate as JSONPath
-	if cond.isRoot && (strings.Contains(cond.field, "*") || strings.Contains(cond.field, "[")) {
+	// For root references with complex paths (containing [), evaluate as JSONPath
+	if cond.isRoot && strings.Contains(cond.field, "[") {
 		pathExpr := "$" + cond.field
 		results, err := Query(root, pathExpr)
 		if err != nil {
@@ -96,25 +141,61 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 		case "not_exists":
 			return !hasResults, nil
 		default:
-			// For comparison operators, use the first result value
 			if !hasResults {
-				return false, nil
+				isAbsent = true
+			} else {
+				value = results[0].Value
 			}
-			value = results[0].Value
 		}
 	} else {
 		value, valueErr = getFieldValue(context, cond.field)
 		if valueErr != nil {
-			// RFC 9535: when a field is absent, all comparisons return false
-			// (absent is not the same as null)
-			switch cond.operator {
-			case "exists":
-				return false, nil
-			case "not_exists":
-				return true, nil
-			default:
-				return false, nil
+			isAbsent = true
+		}
+	}
+
+	// Handle absent values per RFC 9535
+	if isAbsent {
+		switch cond.operator {
+		case "exists":
+			return false, nil
+		case "not_exists":
+			return true, nil
+		default:
+			// RFC 9535: comparison with absent value
+			// Resolve the comparison value
+			resolvedValue := resolveFilterValue(cond.value, item, root)
+
+			// If comparison value is also absent (nil from unresolved path), compare as Nothing
+			if resolvedValue == nil {
+				// Check if the comparison value itself is an absent reference
+				if cond.value != nil {
+					if str, ok := cond.value.(string); ok {
+						// Check if it's a reference to an absent field
+						if strings.HasPrefix(str, "@.") || strings.HasPrefix(str, "$.") {
+							// Both sides absent: == returns true, != returns false (per RFC 9535)
+							switch cond.operator {
+							case "==":
+								return true, nil
+							case "!=":
+								return false, nil
+							default:
+								return false, nil
+							}
+						}
+					}
+				}
 			}
+
+			// For !=null, absent != null is true (RFC 9535: absent is not null)
+			if cond.operator == "!=" && resolvedValue == nil {
+				// Check if comparing to literal null
+				if cond.value == nil {
+					return true, nil
+				}
+			}
+
+			return false, nil
 		}
 	}
 

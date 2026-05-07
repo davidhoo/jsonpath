@@ -604,16 +604,30 @@ func TestParseIndexOrName(t *testing.T) {
 			wantValue: 0,
 		},
 		{
-			name:      "max int",
-			content:   "9223372036854775807",
+			name:      "max int (RFC 9535 limit)",
+			content:   "9007199254740991",
 			wantType:  "indexSegment",
-			wantValue: 9223372036854775807,
+			wantValue: 9007199254740991,
 		},
 		{
-			name:      "min int",
-			content:   "-9223372036854775808",
+			name:      "min int (RFC 9535 limit)",
+			content:   "-9007199254740991",
 			wantType:  "indexSegment",
-			wantValue: -9223372036854775808,
+			wantValue: -9007199254740991,
+		},
+		{
+			name:      "max int overflow",
+			content:   "9223372036854775807",
+			wantErr:   true,
+			wantType:  "indexSegment",
+			wantValue: 0,
+		},
+		{
+			name:      "min int overflow",
+			content:   "-9223372036854775808",
+			wantErr:   true,
+			wantType:  "indexSegment",
+			wantValue: 0,
 		},
 
 		// 字符串字面量

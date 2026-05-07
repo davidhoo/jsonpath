@@ -774,6 +774,37 @@ func parseFilterSegment(content string) (segment, error) {
 }
 
 // 解析过滤器条件
+// isNonSingularQuery checks if a path contains non-singular selectors
+// (wildcard, slice, multi-index, descendant) which are not allowed in comparisons
+func isNonSingularQuery(field string) bool {
+	// Check for wildcard
+	if strings.Contains(field, "*") {
+		return true
+	}
+	// Check for descendant (..)
+	if strings.Contains(field, "..") {
+		return true
+	}
+	// Check for bracket expressions
+	if strings.Contains(field, "[") {
+		// Check for slice (:)
+		if strings.Contains(field, ":") {
+			return true
+		}
+		// Check for multi-index (,) - but need to be careful about commas in strings
+		// Simple check: if there's a comma outside of quotes
+		inQuotes := false
+		for i := 0; i < len(field); i++ {
+			if field[i] == '\'' || field[i] == '"' {
+				inQuotes = !inQuotes
+			} else if field[i] == ',' && !inQuotes {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func parseFilterCondition(content string) (filterCondition, error) {
 	// 检查是否是函数调用格式: functionName(arg1, arg2)
 	// 这是 RFC 9535 的 match() 和 search() 函数语法
@@ -883,6 +914,12 @@ func parseFilterCondition(content string) (filterCondition, error) {
 	// 分割路径和值
 	field := strings.TrimSpace(content[:operatorIndex])
 	value := strings.TrimSpace(content[operatorIndex+len(operator):])
+
+	// RFC 9535: non-singular paths are not allowed in comparisons
+	// Check the left side (field) for non-singular queries
+	if isNonSingularQuery(field) {
+		return filterCondition{}, NewError(ErrInvalidFilter, "non-singular query is not allowed in comparison", content)
+	}
 
 	// 解析值
 	parsedValue, err := parseFilterValue(value)
@@ -1226,8 +1263,16 @@ func parseMultiIndexSegment(content string) (segment, error) {
 		// 检查是否是带引号的字符串
 		if (strings.HasPrefix(trimmed, "'") && strings.HasSuffix(trimmed, "'")) ||
 			(strings.HasPrefix(trimmed, "\"") && strings.HasSuffix(trimmed, "\"")) {
+			quoteChar := trimmed[0]
 			name := trimmed[1 : len(trimmed)-1]
-			selectors = append(selectors, &nameSegment{name: name})
+			if !validateQuotedString(name, quoteChar) {
+				return nil, NewError(ErrSyntax, fmt.Sprintf("invalid string literal: %s", trimmed), trimmed)
+			}
+			unescaped, err := unescapeString(name, quoteChar)
+			if err != nil {
+				return nil, NewError(ErrSyntax, fmt.Sprintf("invalid string literal: %s", trimmed), trimmed)
+			}
+			selectors = append(selectors, &nameSegment{name: unescaped})
 			allIndices = false
 			continue
 		}
@@ -1270,37 +1315,55 @@ func parseMultiIndexSegment(content string) (segment, error) {
 func parseSliceSegment(content string) (segment, error) {
 	parts := strings.Split(content, ":")
 	if len(parts) > 3 {
-		return nil, fmt.Errorf("invalid slice syntax")
+		return nil, NewError(ErrSyntax, "slice has too many colons", content)
 	}
 
 	slice := &sliceSegment{start: 0, end: 0, step: 1}
 
 	// 解析起始索引
 	if parts[0] != "" {
+		if !validateIntegerLiteral(parts[0]) {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice start index: %s", parts[0]), parts[0])
+		}
 		start, err := strconv.Atoi(parts[0])
 		if err != nil {
-			return nil, fmt.Errorf("invalid start index: %s", parts[0])
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice start index: %s", parts[0]), parts[0])
+		}
+		if start < -9007199254740991 || start > 9007199254740991 {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("slice start index out of range: %d", start), parts[0])
 		}
 		slice.start = start
 	}
 
 	// 解析结束索引
 	if len(parts) > 1 && parts[1] != "" {
+		if !validateIntegerLiteral(parts[1]) {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice end index: %s", parts[1]), parts[1])
+		}
 		end, err := strconv.Atoi(parts[1])
 		if err != nil {
-			return nil, fmt.Errorf("invalid end index: %s", parts[1])
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice end index: %s", parts[1]), parts[1])
+		}
+		if end < -9007199254740991 || end > 9007199254740991 {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("slice end index out of range: %d", end), parts[1])
 		}
 		slice.end = end
 	}
 
 	// 解析步长
 	if len(parts) > 2 && parts[2] != "" {
+		if !validateIntegerLiteral(parts[2]) {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice step: %s", parts[2]), parts[2])
+		}
 		step, err := strconv.Atoi(parts[2])
 		if err != nil {
-			return nil, fmt.Errorf("invalid step: %s", parts[2])
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice step: %s", parts[2]), parts[2])
 		}
 		if step == 0 {
-			return nil, fmt.Errorf("step cannot be zero")
+			return nil, NewError(ErrSyntax, "slice step cannot be zero", parts[2])
+		}
+		if step < -9007199254740991 || step > 9007199254740991 {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("slice step out of range: %d", step), parts[2])
 		}
 		slice.step = step
 	}
@@ -1308,26 +1371,253 @@ func parseSliceSegment(content string) (segment, error) {
 	return slice, nil
 }
 
-// 解析索引或名称
+// validateIntegerLiteral validates an integer literal per RFC 9535.
+// Returns true if the string is a valid integer- or decimal-number.
+func validateIntegerLiteral(s string) bool {
+	if s == "" {
+		return false
+	}
+	i := 0
+	// Optional minus (no plus sign allowed)
+	if i < len(s) && s[i] == '-' {
+		i++
+	}
+	if i >= len(s) {
+		return false
+	}
+	// Must start with a digit
+	if s[i] < '0' || s[i] > '9' {
+		return false
+	}
+	// Leading zero check: if first digit is '0', no more digits allowed
+	if s[i] == '0' && i+1 < len(s) && s[i+1] >= '0' && s[i+1] <= '9' {
+		return false
+	}
+	// Consume digits
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	// Must have consumed all characters
+	return i == len(s)
+}
+
+// looksLikeNumber checks if content looks like it could be a number (starts with digit, -digit, or +digit)
+func looksLikeNumber(s string) bool {
+	if s == "" {
+		return false
+	}
+	if s[0] >= '0' && s[0] <= '9' {
+		return true
+	}
+	if (s[0] == '-' || s[0] == '+') && len(s) > 1 && s[1] >= '0' && s[1] <= '9' {
+		return true
+	}
+	return false
+}
+
+// validateQuotedString validates a quoted string content per RFC 9535.
+// Checks for invalid escape sequences and embedded control characters.
+// The input should be the string content WITHOUT the surrounding quotes.
+// quoteChar is the character used for quoting (' or ").
+func validateQuotedString(s string, quoteChar byte) bool {
+	i := 0
+	for i < len(s) {
+		ch := s[i]
+		if ch == '\\' {
+			// Escape sequence
+			i++
+			if i >= len(s) {
+				return false // incomplete escape
+			}
+			esc := s[i]
+			switch esc {
+			case '\\', '/', 'b', 'f', 'n', 'r', 't':
+				// Valid simple escapes (same for both quote types)
+				i++
+			case '"':
+				// Double quote escape only valid in double-quoted strings
+				if quoteChar != '"' {
+					return false
+				}
+				i++
+			case '\'':
+				// Single quote escape only valid in single-quoted strings
+				if quoteChar != '\'' {
+					return false
+				}
+				i++
+			case 'u':
+				// Unicode escape: \uXXXX
+				i++
+				if i+4 > len(s) {
+					return false // not enough hex digits
+				}
+				for j := 0; j < 4; j++ {
+					if i+j >= len(s) || !isHexDigit(s[i+j]) {
+						return false
+					}
+				}
+				i += 4
+			default:
+				return false // invalid escape sequence
+			}
+		} else if ch == quoteChar {
+			// Unescaped quote character - invalid
+			return false
+		} else if ch < 0x20 {
+			// Control characters (U+0000-U+001F) are not allowed unescaped
+			return false
+		} else {
+			i++
+		}
+	}
+	return true
+}
+
+// unescapeString processes escape sequences in a quoted string per RFC 9535.
+// The input should be the string content WITHOUT the surrounding quotes.
+// quoteChar is the character used for quoting (' or ").
+func unescapeString(s string, quoteChar byte) (string, error) {
+	var result strings.Builder
+	result.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		ch := s[i]
+		if ch == '\\' {
+			i++
+			if i >= len(s) {
+				return "", fmt.Errorf("incomplete escape")
+			}
+			esc := s[i]
+			switch esc {
+			case '"':
+				if quoteChar != '"' {
+					return "", fmt.Errorf("invalid escape: \\\" in single-quoted string")
+				}
+				result.WriteByte('"')
+			case '\'':
+				if quoteChar != '\'' {
+					return "", fmt.Errorf("invalid escape: \\' in double-quoted string")
+				}
+				result.WriteByte('\'')
+			case '\\':
+				result.WriteByte('\\')
+			case '/':
+				result.WriteByte('/')
+			case 'b':
+				result.WriteByte('\b')
+			case 'f':
+				result.WriteByte('\f')
+			case 'n':
+				result.WriteByte('\n')
+			case 'r':
+				result.WriteByte('\r')
+			case 't':
+				result.WriteByte('\t')
+			case 'u':
+				// Unicode escape: \uXXXX
+				i++
+				if i+4 > len(s) {
+					return "", fmt.Errorf("incomplete unicode escape")
+				}
+				hexStr := s[i : i+4]
+				codePoint, err := strconv.ParseUint(hexStr, 16, 32)
+				if err != nil {
+					return "", fmt.Errorf("invalid unicode escape: %s", hexStr)
+				}
+				// Check for surrogate pairs
+				if codePoint >= 0xD800 && codePoint <= 0xDFFF {
+					// High surrogate: must be followed by low surrogate
+					if codePoint <= 0xDBFF && i+10 <= len(s) && s[i+4] == '\\' && s[i+5] == 'u' {
+						lowHex := s[i+6 : i+10]
+						lowPoint, err := strconv.ParseUint(lowHex, 16, 32)
+						if err == nil && lowPoint >= 0xDC00 && lowPoint <= 0xDFFF {
+							// Valid surrogate pair
+							combined := 0x10000 + (codePoint-0xD800)*0x400 + (lowPoint - 0xDC00)
+							result.WriteRune(rune(combined))
+							i += 10
+							continue
+						}
+					}
+					return "", fmt.Errorf("invalid surrogate pair")
+				}
+				result.WriteRune(rune(codePoint))
+				i += 4
+				continue
+			default:
+				return "", fmt.Errorf("invalid escape: \\%c", esc)
+			}
+			i++
+		} else if ch == quoteChar {
+			return "", fmt.Errorf("unescaped quote character")
+		} else if ch < 0x20 {
+			return "", fmt.Errorf("control character")
+		} else {
+			result.WriteByte(ch)
+			i++
+		}
+	}
+	return result.String(), nil
+}
+
+// isHexDigit checks if a byte is a hexadecimal digit
+func isHexDigit(ch byte) bool {
+	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
+}
+
+// parseIndexOrName parses a bracket content as an index or name selector
 func parseIndexOrName(content string) (segment, error) {
 	// 处理函数调用
 	if strings.HasSuffix(content, ")") {
 		return parseFunctionCall(content)
 	}
 
-	// 尝试解析为数字索引
-	if idx, err := strconv.Atoi(content); err == nil {
+	// Try to parse as an integer index with RFC 9535 validation
+	if validateIntegerLiteral(content) {
+		idx, err := strconv.Atoi(content)
+		if err != nil {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid index: %s", content), content)
+		}
+		// Reject -0 (negative zero)
+		if content == "-0" {
+			return nil, NewError(ErrSyntax, "negative zero is not a valid index", content)
+		}
+		// RFC 9535: index must be within IEEE 754 double precision range
+		if idx < -9007199254740991 || idx > 9007199254740991 {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("index out of range: %d", idx), content)
+		}
 		return &indexSegment{index: idx}, nil
+	}
+
+	// If content looks like a number but fails validation, it's an invalid index
+	if looksLikeNumber(content) {
+		return nil, NewError(ErrSyntax, fmt.Sprintf("invalid index: %s", content), content)
 	}
 
 	// 处理字符串字面量
 	if strings.HasPrefix(content, "'") && strings.HasSuffix(content, "'") && len(content) > 1 {
-		return &nameSegment{name: content[1 : len(content)-1]}, nil
+		inner := content[1 : len(content)-1]
+		if !validateQuotedString(inner, '\'') {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid string literal: %s", content), content)
+		}
+		unescaped, err := unescapeString(inner, '\'')
+		if err != nil {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid string literal: %s", content), content)
+		}
+		return &nameSegment{name: unescaped}, nil
 	}
 
 	// 处理双引号字符串字面量
 	if strings.HasPrefix(content, "\"") && strings.HasSuffix(content, "\"") && len(content) > 1 {
-		return &nameSegment{name: content[1 : len(content)-1]}, nil
+		inner := content[1 : len(content)-1]
+		if !validateQuotedString(inner, '"') {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid string literal: %s", content), content)
+		}
+		unescaped, err := unescapeString(inner, '"')
+		if err != nil {
+			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid string literal: %s", content), content)
+		}
+		return &nameSegment{name: unescaped}, nil
 	}
 
 	return &nameSegment{name: content}, nil
@@ -1379,6 +1669,64 @@ func parseFunctionCall(content string) (segment, error) {
 	return &functionSegment{name: name, args: args}, nil
 }
 
+// validateNumberLiteral validates a number literal per RFC 9535 grammar.
+// number = ["-"] (int / (int "." 1*DIGIT))
+// int = "0" / (DIGIT1 *DIGIT)
+func validateNumberLiteral(s string) bool {
+	if s == "" {
+		return false
+	}
+	i := 0
+	// Optional minus
+	if s[i] == '-' {
+		i++
+	}
+	if i >= len(s) {
+		return false
+	}
+	// Must have integer part
+	if s[i] < '0' || s[i] > '9' {
+		return false
+	}
+	// Leading zero check
+	if s[i] == '0' {
+		i++
+		if i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			return false // leading zero
+		}
+	} else {
+		// Non-zero digit, consume all digits
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	// Optional fractional part
+	if i < len(s) && s[i] == '.' {
+		i++
+		if i >= len(s) || s[i] < '0' || s[i] > '9' {
+			return false // must have digit after decimal
+		}
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	// Optional exponent
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		if i < len(s) && (s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		if i >= len(s) || s[i] < '0' || s[i] > '9' {
+			return false // must have digit after e/E
+		}
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	// Must have consumed all characters
+	return i == len(s)
+}
+
 // parseFilterValue parses a filter value string into an appropriate type
 func parseFilterValue(valueStr string) (interface{}, error) {
 	valueStr = strings.TrimSpace(valueStr)
@@ -1402,8 +1750,12 @@ func parseFilterValue(valueStr string) (interface{}, error) {
 		return valueStr[1 : len(valueStr)-1], nil
 	}
 
-	// 尝试解析为数字
-	if num, err := strconv.ParseFloat(valueStr, 64); err == nil {
+	// Try to parse as number with RFC 9535 validation
+	if validateNumberLiteral(valueStr) {
+		num, err := strconv.ParseFloat(valueStr, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid number: %s", valueStr)
+		}
 		return num, nil
 	}
 
