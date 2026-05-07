@@ -391,7 +391,20 @@ func (s *functionSegmentV3) evaluate(node Node) (NodeList, error) {
 	if len(s.args) == 0 {
 		args = []interface{}{node.Value}
 	} else {
-		args = s.args
+		// 解析路径参数
+		args = make([]interface{}, len(s.args))
+		for i, arg := range s.args {
+			if pathStr, ok := arg.(string); ok && len(pathStr) > 0 && pathStr[0] == '$' {
+				// 这是一个路径引用，需要解析并求值
+				resolved, err := resolvePath(pathStr, node)
+				if err != nil {
+					return nil, fmt.Errorf("failed to resolve path %q: %v", pathStr, err)
+				}
+				args[i] = resolved
+			} else {
+				args[i] = arg
+			}
+		}
 	}
 	result, err := fn.Call(args)
 	if err != nil {
@@ -418,6 +431,55 @@ func (s *functionSegmentV3) evaluate(node Node) (NodeList, error) {
 		return nl, nil
 	}
 	return NodeList{{Location: node.Location, Value: result}}, nil
+}
+
+// resolvePath 解析并求值 JSONPath 表达式
+func resolvePath(pathStr string, currentNode Node) (interface{}, error) {
+	// 解析路径
+	segments, err := parse(pathStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// 转换为 v3 segments
+	v3Segments := wrapSegments(segments)
+
+	// 使用根节点开始求值
+	// 注意：这里我们需要找到根节点的值
+	// 由于我们只有当前节点，我们需要从当前节点向上遍历
+	// 但在这个实现中，我们假设路径是从根开始的
+	// 所以我们需要从根节点开始求值
+
+	// 对于顶层函数调用，当前节点就是根节点
+	root := currentNode
+
+	// 求值
+	nodeList := NodeList{root}
+	for _, seg := range v3Segments {
+		var newNodeList NodeList
+		for _, n := range nodeList {
+			evaluated, err := seg.evaluate(n)
+			if err != nil {
+				return nil, err
+			}
+			newNodeList = append(newNodeList, evaluated...)
+		}
+		nodeList = newNodeList
+	}
+
+	// 返回结果
+	if len(nodeList) == 0 {
+		return nil, nil
+	}
+	if len(nodeList) == 1 {
+		return nodeList[0].Value, nil
+	}
+	// 返回所有值作为数组
+	values := make([]interface{}, len(nodeList))
+	for i, n := range nodeList {
+		values[i] = n.Value
+	}
+	return values, nil
 }
 
 func (s *functionSegmentV3) String() string {

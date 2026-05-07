@@ -458,7 +458,7 @@ func TestNameSegmentEvaluate(t *testing.T) {
 		},
 		{
 			name:    "function call with string argument",
-			segment: &nameSegment{name: "match('pattern')"},
+			segment: &nameSegment{name: "match('test pattern')"},
 			value:   "test pattern",
 			want:    []interface{}{true},
 		},
@@ -1776,14 +1776,14 @@ func TestRecursiveDescentIncludesRoot(t *testing.T) {
 				t.Fatalf("Unexpected error: %v", err)
 			}
 
-			expectedJSON, _ := json.Marshal(tt.expected)
-			var resultJSON []byte
-			switch result.(type) {
-			case []interface{}:
-				resultJSON, _ = json.Marshal(result)
-			default:
-				resultJSON, _ = json.Marshal([]interface{}{result})
+			// Extract values from NodeList for comparison
+			values := make([]interface{}, len(result))
+			for i, n := range result {
+				values[i] = n.Value
 			}
+
+			expectedJSON, _ := json.Marshal(tt.expected)
+			resultJSON, _ := json.Marshal(values)
 
 			if tt.unordered {
 				// Compare as sets (sort both before comparing)

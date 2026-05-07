@@ -888,8 +888,14 @@ func TestOperatorPrecedence(t *testing.T) {
 				t.Fatalf("Unexpected error: %v", err)
 			}
 
+			// Extract values from NodeList for comparison
+			values := make([]interface{}, len(result))
+			for i, n := range result {
+				values[i] = n.Value
+			}
+
 			expectedJSON, _ := json.Marshal(tt.expected)
-			resultJSON, _ := json.Marshal(result)
+			resultJSON, _ := json.Marshal(values)
 
 			if string(expectedJSON) != string(resultJSON) {
 				t.Errorf("Expected %s, got %s", expectedJSON, resultJSON)
@@ -993,43 +999,43 @@ func TestBareAtReference(t *testing.T) {
 		name     string
 		data     string
 		path     string
-		expected string
+		expected []interface{}
 	}{
 		{
 			name:     "bare @ with numeric comparison >",
 			data:     `[5,3,1,4,2]`,
 			path:     `$[?@>3]`,
-			expected: `[5,4]`,
+			expected: []interface{}{float64(5), float64(4)},
 		},
 		{
 			name:     "bare @ with string comparison ==",
 			data:     `["a","b","c"]`,
 			path:     `$[?@=="b"]`,
-			expected: `["b"]`,
+			expected: []interface{}{"b"},
 		},
 		{
 			name:     "combined bare @ and @.field",
 			data:     `[{"t":"a","v":1},{"t":"b","v":2}]`,
 			path:     `$[?@.t=="a"&&@.v>0]`,
-			expected: `[{"t":"a","v":1}]`,
+			expected: []interface{}{map[string]interface{}{"t": "a", "v": float64(1)}},
 		},
 		{
 			name:     "bare @ with < operator",
 			data:     `[5,3,1,4,2]`,
 			path:     `$[?@<3]`,
-			expected: `[1,2]`,
+			expected: []interface{}{float64(1), float64(2)},
 		},
 		{
 			name:     "bare @ with >= operator",
 			data:     `[5,3,1,4,2]`,
 			path:     `$[?@>=4]`,
-			expected: `[5,4]`,
+			expected: []interface{}{float64(5), float64(4)},
 		},
 		{
 			name:     "bare @ with != operator",
 			data:     `["a","b","c"]`,
 			path:     `$[?@!="b"]`,
-			expected: `["a","c"]`,
+			expected: []interface{}{"a", "c"},
 		},
 	}
 
@@ -1043,9 +1049,15 @@ func TestBareAtReference(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Query() error: %v", err)
 			}
-			resultJSON, _ := json.Marshal(result)
-			if string(resultJSON) != tt.expected {
-				t.Errorf("Query() = %s, want %s", resultJSON, tt.expected)
+			// Extract values from NodeList for comparison
+			values := make([]interface{}, len(result))
+			for i, n := range result {
+				values[i] = n.Value
+			}
+			resultJSON, _ := json.Marshal(values)
+			expectedJSON, _ := json.Marshal(tt.expected)
+			if string(resultJSON) != string(expectedJSON) {
+				t.Errorf("Query() = %s, want %s", resultJSON, expectedJSON)
 			}
 		})
 	}

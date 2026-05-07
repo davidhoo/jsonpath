@@ -35,6 +35,7 @@ type config struct {
 	file    string
 	compact bool
 	noColor bool
+	showPath bool
 	indent  string
 }
 
@@ -65,6 +66,10 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("--no-color"),
 		descColor("Disable colored output"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("--path"),
+		descColor("Show Normalized Path with values"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
 		flagColor("-h"),
@@ -188,16 +193,28 @@ func printHelp() {
 		descColor("Returns the sum of all numeric values in an array (ignores non-numeric values)"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
-		flagColor("count(value)"),
-		descColor("Returns the number of occurrences of a value in an array"),
+		flagColor("count(nodelist)"),
+		descColor("Returns the number of nodes in a nodelist (RFC 9535)"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
-		flagColor("match(regex)"),
-		descColor("Returns true if the string matches the regular expression pattern"),
+		flagColor("occurrences(value)"),
+		descColor("Returns the number of occurrences of a value in an array (non-standard)"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
-		flagColor("search(regex)"),
-		descColor("Returns an array of strings that match the regular expression pattern"),
+		flagColor("match(string, pattern)"),
+		descColor("Returns true if string matches the I-Regexp pattern (RFC 9535)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("search(string, pattern)"),
+		descColor("Returns true if string contains a match for the I-Regexp pattern (RFC 9535)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("value(nodelist)"),
+		descColor("Returns the value of a single-node nodelist (RFC 9535)"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("filterMatch(array, pattern)"),
+		descColor("Filters array elements matching the regex pattern (non-standard)"),
 	)
 	fmt.Fprintf(os.Stderr, "\n%s\n", descColor("Filter Syntax:"))
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
@@ -295,16 +312,24 @@ func printHelp() {
 		descColor("$.store.book[*].price.sum()        # Get total price"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
-		flagColor("count(number)"),
-		descColor("$.numbers.count(2)"),
+		flagColor("count()"),
+		descColor("$.items.count()                    # Count nodes in nodelist"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
-		flagColor("count(string)"),
-		descColor("$.tags.count(\"a\")"),
+		flagColor("occurrences()"),
+		descColor("$.numbers.occurrences(2)           # Count value occurrences"),
 	)
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
-		flagColor("count(object)"),
-		descColor("$.items.count({\"id\": 1})"),
+		flagColor("match()"),
+		descColor("match($.name, '^S.*$')             # Full-string I-Regexp match"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("search()"),
+		descColor("search($.text, 'pattern')          # Substring I-Regexp search"),
+	)
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		flagColor("value()"),
+		descColor("$.items[0].value()                 # Extract single value"),
 	)
 	fmt.Fprintf(os.Stderr, "\n%s %s\n",
 		descColor("Version:"),
@@ -350,6 +375,7 @@ func ParseFlags() (string, string, error) {
 	flagSet.StringVar(&cfg.file, "f", "", "JSON file path")
 	flagSet.BoolVar(&cfg.compact, "c", false, "Compact output")
 	flagSet.BoolVar(&cfg.noColor, "no-color", false, "Disable colored output")
+	flagSet.BoolVar(&cfg.showPath, "path", false, "Show Normalized Path with values")
 	flagSet.BoolVar(&help, "h", false, "Show help")
 	flagSet.BoolVar(&help, "help", false, "Show help")
 	flagSet.BoolVar(&version, "v", false, "Show version")
@@ -646,19 +672,9 @@ func run() error {
 	// 如果 JSONPath 表达式被指定，执行查询
 	if cfg.path != "" {
 		// 执行 JSONPath 查询
-		result, err := jsonpath.Query(data, cfg.path)
+		nodeList, err := jsonpath.Query(data, cfg.path)
 		if err != nil {
 			return fmt.Errorf("%s: %v", errorColor("error executing query"), err)
-		}
-
-		// 如果结果是字符串，直接输出
-		if str, ok := result.(string); ok {
-			if cfg.noColor {
-				fmt.Println(str)
-			} else {
-				fmt.Println(stringColor(str))
-			}
-			return nil
 		}
 
 		// 设置缩进
@@ -666,9 +682,49 @@ func run() error {
 			cfg.indent = "  "
 		}
 
-		// 输出结果
-		if err := outputResult(result, &cfg); err != nil {
-			return err
+		// 根据 --path 标志决定输出格式
+		if cfg.showPath {
+			// 输出 Normalized Path + value
+			for _, node := range nodeList {
+				pathStr := node.Location
+				valueJSON, err := json.Marshal(node.Value)
+				if err != nil {
+					return fmt.Errorf("%s: %v", errorColor("error encoding JSON"), err)
+				}
+				if cfg.noColor {
+					fmt.Printf("%s %s\n", pathStr, string(valueJSON))
+				} else {
+					fmt.Printf("%s %s\n", keyColor(pathStr), string(valueJSON))
+				}
+			}
+		} else {
+			// 默认输出：只输出值（向后兼容）
+			// 提取值
+			values := make([]interface{}, len(nodeList))
+			for i, n := range nodeList {
+				values[i] = n.Value
+			}
+
+			// 单个值直接输出
+			if len(values) == 1 {
+				if str, ok := values[0].(string); ok {
+					if cfg.noColor {
+						fmt.Println(str)
+					} else {
+						fmt.Println(stringColor(str))
+					}
+					return nil
+				}
+				if err := outputResult(values[0], &cfg); err != nil {
+					return err
+				}
+			} else if len(values) == 0 {
+				fmt.Println("[]")
+			} else {
+				if err := outputResult(values, &cfg); err != nil {
+					return err
+				}
+			}
 		}
 	} else {
 		// 解析原始 JSON 数据

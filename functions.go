@@ -61,6 +61,57 @@ func getCompiledRegex(pattern string) (*regexp.Regexp, error) {
 	return re, nil
 }
 
+// hasStartAnchor 检查模式是否已经有起始锚点
+func hasStartAnchor(pattern string) bool {
+	if len(pattern) == 0 {
+		return false
+	}
+	// 检查是否以 ^ 开头
+	if pattern[0] == '^' {
+		return true
+	}
+	// 检查是否以 (?= 或 (?: 开头（非捕获组或前瞻）
+	if len(pattern) > 2 && pattern[0] == '(' && (pattern[1] == '?' || pattern[1] == ':') {
+		return true
+	}
+	return false
+}
+
+// hasEndAnchor 检查模式是否已经有结束锚点
+func hasEndAnchor(pattern string) bool {
+	if len(pattern) == 0 {
+		return false
+	}
+	// 检查是否以 $ 结尾
+	if pattern[len(pattern)-1] == '$' {
+		return true
+	}
+	// 检查是否以 ) 结尾，然后可能有量词
+	if pattern[len(pattern)-1] == ')' {
+		return true
+	}
+	return false
+}
+
+// removeAnchors 移除模式中的 ^ 和 $ 锚点
+func removeAnchors(pattern string) string {
+	if len(pattern) == 0 {
+		return pattern
+	}
+	
+	// 移除开头的 ^
+	if pattern[0] == '^' {
+		pattern = pattern[1:]
+	}
+	
+	// 移除结尾的 $
+	if len(pattern) > 0 && pattern[len(pattern)-1] == '$' {
+		pattern = pattern[:len(pattern)-1]
+	}
+	
+	return pattern
+}
+
 // numberType 表示数值类型
 type numberType int
 
@@ -261,17 +312,36 @@ var globalFunctions = map[string]Function{
 			return values, nil
 		},
 	},
+	// RFC 9535 count() - counts nodes in a nodelist
 	"count": &builtinFunction{
 		name: "count",
 		callback: func(args []interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("count() requires exactly 1 argument")
+			}
+
+			// 如果参数是数组，返回数组长度
+			if arr, ok := args[0].([]interface{}); ok {
+				return float64(len(arr)), nil
+			}
+
+			// 如果参数是 NodeList (通过反射检查)
+			// NodeList 在运行时是 []interface{} 类型
+			return nil, fmt.Errorf("count() argument must be a nodelist")
+		},
+	},
+	// Non-standard extension: occurrences() - counts value occurrences in an array
+	"occurrences": &builtinFunction{
+		name: "occurrences",
+		callback: func(args []interface{}) (interface{}, error) {
 			if len(args) != 2 {
-				return nil, fmt.Errorf("count() requires exactly 2 arguments: array and value")
+				return nil, fmt.Errorf("occurrences() requires exactly 2 arguments: array and value")
 			}
 
 			// 确保第一个参数是数组
 			arr, ok := args[0].([]interface{})
 			if !ok {
-				return nil, fmt.Errorf("count() first argument must be an array")
+				return nil, fmt.Errorf("occurrences() first argument must be an array")
 			}
 
 			// 计算匹配值的数量
@@ -486,6 +556,8 @@ var globalFunctions = map[string]Function{
 			return sum, nil
 		},
 	},
+	// RFC 9535 match() - function-style: match(string, pattern)
+	// Uses I-Regexp for full-string matching
 	"match": &builtinFunction{
 		name: "match",
 		callback: func(args []interface{}) (interface{}, error) {
@@ -515,88 +587,81 @@ var globalFunctions = map[string]Function{
 				return false, nil
 			}
 
-			// 5. 处理正则表达式模式
-			var result strings.Builder
-			var escaped bool
-			var inCharClass bool
-
-			for i := 0; i < len(pattern); i++ {
-				ch := pattern[i]
-				if escaped {
-					switch ch {
-					case 'd', 'D', 'w', 'W', 's', 'S', 'b', 'B':
-						// 保持原样的特殊字符序列
-						result.WriteByte('\\')
-						result.WriteByte(ch)
-					case 'n':
-						result.WriteString(`\n`)
-					case 'r':
-						result.WriteString(`\r`)
-					case 't':
-						result.WriteString(`\t`)
-					case '[', ']', '(', ')', '{', '}', '\\', '.', '*', '+', '?', '|', '^', '$':
-						// 转义元字符
-						result.WriteByte(ch)
-					case 'p', 'P':
-						// 处理 Unicode 属性
-						result.WriteByte('\\')
-						result.WriteByte(ch)
-						if i+1 < len(pattern) && pattern[i+1] == '{' {
-							i++ // 跳过 '{'
-							result.WriteByte('{')
-							for i+1 < len(pattern) && pattern[i+1] != '}' {
-								i++
-								result.WriteByte(pattern[i])
-							}
-							if i+1 < len(pattern) && pattern[i+1] == '}' {
-								i++
-								result.WriteByte('}')
-							}
-						}
-					default:
-						if inCharClass {
-							result.WriteByte(ch)
-						} else {
-							result.WriteByte(ch)
-						}
-					}
-					escaped = false
-				} else if ch == '\\' {
-					escaped = true
-				} else if ch == '[' {
-					inCharClass = true
-					result.WriteByte(ch)
-				} else if ch == ']' {
-					inCharClass = false
-					result.WriteByte(ch)
-				} else {
-					result.WriteByte(ch)
-				}
+			// 5. 将 I-Regexp 转换为 Go regexp
+			goPattern, err := IRegexpToGoRegexp(pattern)
+			if err != nil {
+				return false, nil // 无效模式返回 false
 			}
 
-			// 处理末尾的反斜杠
-			if escaped {
-				result.WriteByte('\\')
-			}
+			// 6. 对于 match() 函数，我们需要全字符串匹配
+			// 移除现有的锚点，然后添加全字符串匹配
+			goPattern = removeAnchors(goPattern)
+			goPattern = "\\A(?:" + goPattern + ")\\z"
 
-			pattern = result.String()
-
-			// 6. 获取或编译正则表达式
-			re, err := getCompiledRegex(pattern)
+			// 7. 获取或编译正则表达式
+			re, err := getCompiledRegex(goPattern)
 			if err != nil {
 				return false, nil // 正则表达式语法错误时返回 false
 			}
 
-			// 7. 执行匹配
+			// 8. 执行匹配
 			return re.MatchString(str), nil
 		},
 	},
+	// RFC 9535 search() - function-style: search(string, pattern)
+	// Returns true if string contains a match for the I-Regexp pattern
 	"search": &builtinFunction{
 		name: "search",
 		callback: func(args []interface{}) (interface{}, error) {
 			// 1. 验证参数数量
 			if len(args) != 2 {
-				return nil, fmt.Errorf("search() requires exactly 2 arguments")
+				return nil, fmt.Errorf("search() requires exactly 2 arguments: string and pattern")
+			}
+
+			// 2. 获取并验证第二个参数（正则表达式模式）
+			pattern, ok := args[1].(string)
+			if !ok {
+				return nil, fmt.Errorf("search() second argument must be a string pattern")
+			}
+
+			// 3. 处理空模式
+			if pattern == "" {
+				return true, nil // 空模式匹配任何字符串
+			}
+
+			// 4. 获取第一个参数（要搜索的字符串）
+			var str string
+			switch v := args[0].(type) {
+			case string:
+				str = v
+			default:
+				return nil, fmt.Errorf("search() first argument must be a string")
+			}
+
+			// 5. 将 I-Regexp 转换为 Go regexp
+			goPattern, err := IRegexpToGoRegexp(pattern)
+			if err != nil {
+				return nil, fmt.Errorf("invalid I-Regexp pattern: %v", err)
+			}
+
+			// 6. 获取或编译正则表达式
+			re, err := getCompiledRegex(goPattern)
+			if err != nil {
+				return nil, fmt.Errorf("invalid regular expression: %v", err)
+			}
+
+			// 7. 执行搜索
+			return re.MatchString(str), nil
+		},
+	},
+	// Non-standard extension: filterMatch() - filters array by regex
+	// Renamed from the old search() function
+	"filterMatch": &builtinFunction{
+		name: "filterMatch",
+		callback: func(args []interface{}) (interface{}, error) {
+			// 1. 验证参数数量
+			if len(args) != 2 {
+				return nil, fmt.Errorf("filterMatch() requires exactly 2 arguments")
 			}
 
 			// 2. 获取数组参数
@@ -713,6 +778,29 @@ var globalFunctions = map[string]Function{
 			}
 
 			return matches, nil
+		},
+	},
+	// RFC 9535 value() - extracts a single value from a nodelist
+	"value": &builtinFunction{
+		name: "value",
+		callback: func(args []interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("value() requires exactly 1 argument")
+			}
+
+			// 参数必须是数组（NodeList）
+			arr, ok := args[0].([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("value() argument must be a nodelist")
+			}
+
+			// 如果恰好有一个节点，返回其值
+			if len(arr) == 1 {
+				return arr[0], nil
+			}
+
+			// 否则返回 Nothing
+			return Nothing{}, nil
 		},
 	},
 }

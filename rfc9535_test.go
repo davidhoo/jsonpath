@@ -85,21 +85,20 @@ func TestRFC9535Suite(t *testing.T) {
 				return
 			}
 
-			result, err := Query(test.Document, test.Selector)
+			nodeList, err := Query(test.Document, test.Selector)
 			if err != nil {
 				t.Logf("Unexpected error for selector %q: %v", test.Selector, err)
 				failCount++
 				return
 			}
 
-			// RFC 9535 expects results as a nodelist (array).
-			// Query() returns single value for single results; normalize to array.
-			normalizedResult := result
-			if _, isArray := result.([]interface{}); !isArray {
-				normalizedResult = []interface{}{result}
+			// Extract values from NodeList for comparison
+			values := make([]interface{}, len(nodeList))
+			for i, n := range nodeList {
+				values[i] = n.Value
 			}
 
-			resultJSON, _ := json.Marshal(normalizedResult)
+			resultJSON, _ := json.Marshal(values)
 
 			// Check if test has multiple valid results (results field)
 			if len(test.Results) > 0 {

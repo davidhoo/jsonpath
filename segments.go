@@ -529,23 +529,6 @@ func exprToString(node exprNode) string {
 	}
 }
 
-// String returns the string representation of a filter condition
-func (c filterCondition) String() string {
-	field := strings.TrimPrefix(c.field, "@.")
-	switch c.operator {
-	case "exists":
-		return fmt.Sprintf("@.%s", field)
-	case "not_exists":
-		return fmt.Sprintf("!@.%s", field)
-	default:
-		value := c.value
-		if str, ok := value.(string); ok {
-			value = "'" + str + "'"
-		}
-		return fmt.Sprintf("@.%s %s %v", field, c.operator, value)
-	}
-}
-
 // 多索引段
 type multiIndexSegment struct {
 	indices []int

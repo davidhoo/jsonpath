@@ -5,8 +5,9 @@ import (
 	"fmt"
 )
 
-// Query executes a JSONPath query on JSON data and returns the result
-func Query(data interface{}, path string) (interface{}, error) {
+// Query executes a JSONPath query on JSON data and returns a NodeList.
+// Each Node contains a Location (Normalized Path) and the corresponding Value.
+func Query(data interface{}, path string) (NodeList, error) {
 	// If data is a string, parse it as JSON
 	if jsonStr, ok := data.(string); ok {
 		var parsedData interface{}
@@ -16,14 +17,14 @@ func Query(data interface{}, path string) (interface{}, error) {
 		data = parsedData
 	}
 
-	// Parse path into old segments
-	oldSegments, err := parse(path)
+	// Parse path into segments
+	segments, err := parse(path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid path: %v", err)
 	}
 
 	// Convert to v3 segments
-	v3Segments := wrapSegments(oldSegments)
+	v3Segments := wrapSegments(segments)
 
 	// Build root node
 	root := Node{Location: "$", Value: data}
@@ -42,31 +43,5 @@ func Query(data interface{}, path string) (interface{}, error) {
 		nodeList = newNodeList
 	}
 
-	// Extract values from nodelist for backward compatibility
-	result := make([]interface{}, len(nodeList))
-	for i, n := range nodeList {
-		result[i] = n.Value
-	}
-
-	// Determine return format based on last segment type
-	if len(oldSegments) > 0 {
-		switch oldSegments[len(oldSegments)-1].(type) {
-		case *filterSegment:
-			return result, nil
-		case *functionSegment:
-			if len(result) == 1 {
-				return result[0], nil
-			}
-			return result, nil
-		}
-	}
-
-	// For other cases, return single value if only one result
-	if len(result) == 1 {
-		return result[0], nil
-	}
-	if result == nil {
-		return []interface{}{}, nil
-	}
-	return result, nil
+	return nodeList, nil
 }

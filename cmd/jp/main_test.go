@@ -494,7 +494,7 @@ func TestRun(t *testing.T) {
 		{
 			name:    "version flag",
 			args:    []string{"jp", "-v"},
-			wantOut: "jp version v2.1.0",
+			wantOut: "jp version v3.0.0",
 			wantErr: false,
 		},
 		{

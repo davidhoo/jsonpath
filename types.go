@@ -3,6 +3,7 @@ package jsonpath
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // filterCondition represents a filter condition in a filter expression
@@ -81,6 +82,8 @@ func evaluateSingleCondition(cond filterCondition, item interface{}) (bool, erro
 		// Non-existence test: field doesn't exist or value is nil
 		return value == nil, nil
 	case "match":
+		// RFC 9535 match() function: match(string, pattern)
+		// Uses I-Regexp for full-string matching
 		str, ok := value.(string)
 		if !ok {
 			return false, nil
@@ -89,9 +92,37 @@ func evaluateSingleCondition(cond filterCondition, item interface{}) (bool, erro
 		if !ok {
 			return false, nil
 		}
-		re, err := regexp.Compile(pattern)
+		// Convert I-Regexp to Go regexp
+		goPattern, err := IRegexpToGoRegexp(pattern)
+		if err != nil {
+			return false, nil // Invalid pattern returns false
+		}
+		// Add anchors for full-string matching
+		goPattern = "^(" + goPattern + ")$"
+		re, err := regexp.Compile(goPattern)
 		if err != nil {
 			return false, nil
+		}
+		return re.MatchString(str), nil
+	case "search":
+		// RFC 9535 search() function: search(string, pattern)
+		// Returns true if string contains a match for the pattern
+		str, ok := value.(string)
+		if !ok {
+			return false, nil
+		}
+		pattern, ok := cond.value.(string)
+		if !ok {
+			return false, nil
+		}
+		// Convert I-Regexp to Go regexp
+		goPattern, err := IRegexpToGoRegexp(pattern)
+		if err != nil {
+			return false, fmt.Errorf("invalid regex pattern: %s", pattern)
+		}
+		re, err := regexp.Compile(goPattern)
+		if err != nil {
+			return false, fmt.Errorf("invalid regex pattern: %s", pattern)
 		}
 		return re.MatchString(str), nil
 	default:
@@ -100,5 +131,26 @@ func evaluateSingleCondition(cond filterCondition, item interface{}) (bool, erro
 			return false, fmt.Errorf("invalid operator: %s", cond.operator)
 		}
 		return result, nil
+	}
+}
+
+// String returns the string representation of a filter condition
+func (c filterCondition) String() string {
+	field := strings.TrimPrefix(c.field, "@.")
+	switch c.operator {
+	case "exists":
+		return fmt.Sprintf("@.%s", field)
+	case "not_exists":
+		return fmt.Sprintf("!@.%s", field)
+	case "match":
+		return fmt.Sprintf("match(@.%s, '%v')", field, c.value)
+	case "search":
+		return fmt.Sprintf("search(@.%s, '%v')", field, c.value)
+	default:
+		value := c.value
+		if str, ok := value.(string); ok {
+			value = "'" + str + "'"
+		}
+		return fmt.Sprintf("@.%s %s %v", field, c.operator, value)
 	}
 }

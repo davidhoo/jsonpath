@@ -14,6 +14,17 @@ func parse(path string) ([]segment, error) {
 		return nil, nil
 	}
 
+	// 检查是否是函数调用格式: functionName(arg1, arg2, ...)
+	// 这是 RFC 9535 的 match() 和 search() 函数语法
+	if idx := strings.Index(path, "("); idx > 0 && strings.HasSuffix(path, ")") {
+		funcName := path[:idx]
+		// 验证函数名是有效的标识符
+		if isValidFunctionName(funcName) {
+			argsStr := path[idx+1 : len(path)-1]
+			return parseTopLevelFunctionCall(funcName, argsStr)
+		}
+	}
+
 	// 检查并移除 $ 前缀
 	if !strings.HasPrefix(path, "$") {
 		return nil, NewError(ErrSyntax, "path must start with $", path)
@@ -35,6 +46,144 @@ func parse(path string) ([]segment, error) {
 
 	// 处理常规路径
 	return parseRegular(path)
+}
+
+// isValidFunctionName 检查是否是有效的函数名
+func isValidFunctionName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if i == 0 {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_') {
+				return false
+			}
+		} else {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// parseTopLevelFunctionCall 解析顶层函数调用
+func parseTopLevelFunctionCall(funcName, argsStr string) ([]segment, error) {
+	// 解析参数
+	args, err := parseFunctionArgsList(argsStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// 创建函数段
+	return []segment{&functionSegment{name: funcName, args: args}}, nil
+}
+
+// parseFunctionArgsList 解析函数参数列表
+func parseFunctionArgsList(argsStr string) ([]interface{}, error) {
+	if strings.TrimSpace(argsStr) == "" {
+		return nil, nil
+	}
+
+	var args []interface{}
+	var currentArg strings.Builder
+	var inQuote bool
+	var quoteChar rune
+	depth := 0
+
+	for i := 0; i < len(argsStr); i++ {
+		ch := rune(argsStr[i])
+
+		switch {
+		case (ch == '\'' || ch == '"') && !inQuote:
+			// 开始引号
+			inQuote = true
+			quoteChar = ch
+			// 不将引号写入 currentArg
+		case ch == quoteChar && inQuote:
+			// 结束引号
+			inQuote = false
+			quoteChar = 0
+			// 不将引号写入 currentArg
+		case ch == '\\' && inQuote && i+1 < len(argsStr):
+			// 处理转义字符
+			nextCh := rune(argsStr[i+1])
+			if nextCh == quoteChar || nextCh == '\\' {
+				// 转义的引号或反斜杠
+				currentArg.WriteRune(nextCh)
+				i++ // 跳过下一个字符
+			} else {
+				// 其他转义序列，保持原样
+				currentArg.WriteRune(ch)
+			}
+		case ch == '(' && !inQuote:
+			depth++
+			currentArg.WriteRune(ch)
+		case ch == ')' && !inQuote:
+			depth--
+			currentArg.WriteRune(ch)
+		case ch == ',' && !inQuote && depth == 0:
+			arg := strings.TrimSpace(currentArg.String())
+			if arg != "" {
+				parsedArg, err := parseSingleFunctionArg(arg)
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, parsedArg)
+			}
+			currentArg.Reset()
+		default:
+			currentArg.WriteRune(ch)
+		}
+	}
+
+	// 处理最后一个参数
+	arg := strings.TrimSpace(currentArg.String())
+	if arg != "" {
+		parsedArg, err := parseSingleFunctionArg(arg)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, parsedArg)
+	}
+
+	return args, nil
+}
+
+// parseSingleFunctionArg 解析单个函数参数
+func parseSingleFunctionArg(arg string) (interface{}, error) {
+	arg = strings.TrimSpace(arg)
+
+	// 尝试解析为数字
+	if num, err := strconv.ParseFloat(arg, 64); err == nil {
+		return num, nil
+	}
+
+	// 处理布尔值
+	if arg == "true" {
+		return true, nil
+	}
+	if arg == "false" {
+		return false, nil
+	}
+
+	// 处理 null
+	if arg == "null" {
+		return nil, nil
+	}
+
+	// 如果以 $ 开头，它是一个路径引用
+	if strings.HasPrefix(arg, "$") {
+		return arg, nil
+	}
+
+	// 处理 @ 引用（在过滤器上下文中）
+	if strings.HasPrefix(arg, "@") {
+		return arg, nil
+	}
+
+	// 其他情况都作为字符串处理（包括正则表达式模式）
+	return arg, nil
 }
 
 // 解析递归下降路径
@@ -405,6 +554,21 @@ func negateNode(node exprNode) (exprNode, error) {
 
 // 解析过滤器表达式
 func parseFilterSegment(content string) (segment, error) {
+	// 检查是否是函数调用格式: functionName(arg1, arg2)
+	// 这是 RFC 9535 的 match() 和 search() 函数语法
+	if idx := strings.Index(content, "("); idx > 0 && strings.HasSuffix(content, ")") {
+		funcName := content[:idx]
+		if isValidFunctionName(funcName) {
+			// 这是一个函数调用，解析为过滤器表达式
+			argsStr := content[idx+1 : len(content)-1]
+			cond, err := parseFilterFunctionCall(funcName, argsStr)
+			if err != nil {
+				return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
+			}
+			return &filterSegment{expr: &conditionNode{cond: cond}}, nil
+		}
+	}
+
 	// 检查语法
 	if !strings.HasPrefix(content, "@") && !strings.HasPrefix(content, "(@") && !strings.HasPrefix(content, "!") && !strings.HasPrefix(content, "(!") && !strings.HasPrefix(content, "(") {
 		return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
@@ -482,6 +646,16 @@ func parseFilterSegment(content string) (segment, error) {
 
 // 解析过滤器条件
 func parseFilterCondition(content string) (filterCondition, error) {
+	// 检查是否是函数调用格式: functionName(arg1, arg2)
+	// 这是 RFC 9535 的 match() 和 search() 函数语法
+	if idx := strings.Index(content, "("); idx > 0 && strings.HasSuffix(content, ")") {
+		funcName := content[:idx]
+		if isValidFunctionName(funcName) {
+			argsStr := content[idx+1 : len(content)-1]
+			return parseFilterFunctionCall(funcName, argsStr)
+		}
+	}
+
 	// 确保条件以 @ 开头
 	if !strings.HasPrefix(content, "@") {
 		if strings.HasPrefix(content, ".") {
@@ -491,7 +665,7 @@ func parseFilterCondition(content string) (filterCondition, error) {
 		}
 	}
 
-	// 检查是否是函数调用
+	// 检查是否是旧式方法调用: @.field.match(pattern)
 	if strings.Contains(content, ".match(") {
 		parts := strings.Split(content, ".match(")
 		if len(parts) != 2 || !strings.HasSuffix(parts[1], ")") {
@@ -580,6 +754,47 @@ func parseFilterCondition(content string) (filterCondition, error) {
 		field:    strings.TrimPrefix(field, "@."),
 		operator: operator,
 		value:    parsedValue,
+	}, nil
+}
+
+// parseFilterFunctionCall 解析过滤器中的函数调用
+func parseFilterFunctionCall(funcName, argsStr string) (filterCondition, error) {
+	// 解析参数
+	args, err := parseFunctionArgsList(argsStr)
+	if err != nil {
+		return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid function arguments: %v", err), funcName+"("+argsStr+")")
+	}
+
+	// 对于 match 和 search 函数，需要两个参数
+	if funcName == "match" || funcName == "search" {
+		if len(args) != 2 {
+			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("%s() requires exactly 2 arguments", funcName), funcName+"("+argsStr+")")
+		}
+
+		// 第一个参数是字段路径
+		field, ok := args[0].(string)
+		if !ok {
+			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("%s() first argument must be a string", funcName), funcName+"("+argsStr+")")
+		}
+
+		// 第二个参数是模式
+		pattern, ok := args[1].(string)
+		if !ok {
+			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("%s() second argument must be a string", funcName), funcName+"("+argsStr+")")
+		}
+
+		return filterCondition{
+			field:    strings.TrimPrefix(field, "@."),
+			operator: funcName,
+			value:    pattern,
+		}, nil
+	}
+
+	// 对于其他函数，创建一个通用的函数调用条件
+	return filterCondition{
+		field:    "",
+		operator: "function:" + funcName,
+		value:    args,
 	}, nil
 }
 
