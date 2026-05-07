@@ -1075,29 +1075,6 @@ func getFieldValue(obj interface{}, field string) (interface{}, error) {
 	return current, nil
 }
 
-// isValidIdentifier 检查字符串是否是有效的标识符
-func isValidIdentifier(s string) bool {
-	if s == "" {
-		return false
-	}
-
-	// 检查第一个字符是否是字母或下划线
-	first := s[0]
-	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_') {
-		return false
-	}
-
-	// 检查其余字符是否是字母、数字或下划线
-	for i := 1; i < len(s); i++ {
-		c := s[i]
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
-			return false
-		}
-	}
-
-	return true
-}
-
 // 解析多索引选择 - RFC 9535 支持混合选择器类型
 func parseMultiIndexSegment(content string) (segment, error) {
 	// 检查前导和尾随逗号
