@@ -27,7 +27,7 @@ func Query(data interface{}, path string) (NodeList, error) {
 	v3Segments := wrapSegments(segments)
 
 	// Build root node
-	root := Node{Location: "$", Value: data}
+	root := Node{Location: "$", Value: data, Root: data}
 
 	// Evaluate segments using v3 pipeline
 	nodeList := NodeList{root}

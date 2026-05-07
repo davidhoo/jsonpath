@@ -95,7 +95,7 @@ func (p *IRegexpParser) parseAtom() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return "." + q, nil
+		return "[^\\r\\n]" + q, nil
 	case ch == '^' || ch == '$':
 		p.pos++
 		return string(ch), nil

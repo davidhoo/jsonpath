@@ -468,11 +468,12 @@ func parseBracketSegment(content string) (segment, error) {
 	return parseIndexOrName(content)
 }
 
-// hasTopLevelComma checks if content has commas at the top level (not inside parentheses or quotes)
+// hasTopLevelComma checks if content has commas at the top level (not inside parentheses, brackets, or quotes)
 func hasTopLevelComma(content string) bool {
 	inQuotes := false
 	inSingleQuotes := false
 	parenDepth := 0
+	bracketDepth := 0
 	for i := 0; i < len(content); i++ {
 		ch := content[i]
 		if (inQuotes || inSingleQuotes) && ch == '\\' && i+1 < len(content) {
@@ -488,7 +489,11 @@ func hasTopLevelComma(content string) bool {
 				parenDepth++
 			} else if ch == ')' {
 				parenDepth--
-			} else if ch == ',' && parenDepth == 0 {
+			} else if ch == '[' {
+				bracketDepth++
+			} else if ch == ']' {
+				bracketDepth--
+			} else if ch == ',' && parenDepth == 0 && bracketDepth == 0 {
 				return true
 			}
 		}
@@ -496,12 +501,13 @@ func hasTopLevelComma(content string) bool {
 	return false
 }
 
-// splitTopLevel splits content by the given delimiter at the top level (not inside parentheses or quotes)
+// splitTopLevel splits content by the given delimiter at the top level (not inside parentheses, brackets, or quotes)
 func splitTopLevel(content string, delimiter byte) []string {
 	var parts []string
 	inQuotes := false
 	inSingleQuotes := false
 	parenDepth := 0
+	bracketDepth := 0
 	start := 0
 	for i := 0; i < len(content); i++ {
 		ch := content[i]
@@ -518,7 +524,11 @@ func splitTopLevel(content string, delimiter byte) []string {
 				parenDepth++
 			} else if ch == ')' {
 				parenDepth--
-			} else if ch == delimiter && parenDepth == 0 {
+			} else if ch == '[' {
+				bracketDepth++
+			} else if ch == ']' {
+				bracketDepth--
+			} else if ch == delimiter && parenDepth == 0 && bracketDepth == 0 {
 				parts = append(parts, content[start:i])
 				start = i + 1
 			}
@@ -649,9 +659,10 @@ func (p *expressionParser) parsePrimary() (exprNode, error) {
 		return node, nil
 	}
 
-	// Parse atomic condition (everything until next &&, ||, or unmatched ))
+	// Parse atomic condition (everything until next &&, ||, or unmatched )) or ])
 	start := p.pos
 	depth := 0
+	bracketDepth := 0
 	inQuotes := false
 	inSingleQuotes := false
 
@@ -693,9 +704,22 @@ func (p *expressionParser) parsePrimary() (exprNode, error) {
 			p.pos++
 			continue
 		}
+		if ch == '[' {
+			bracketDepth++
+			p.pos++
+			continue
+		}
+		if ch == ']' {
+			if bracketDepth == 0 {
+				break
+			}
+			bracketDepth--
+			p.pos++
+			continue
+		}
 
 		// Check for top-level && or ||
-		if depth == 0 && p.pos+1 < len(p.input) {
+		if depth == 0 && bracketDepth == 0 && p.pos+1 < len(p.input) {
 			op := p.input[p.pos : p.pos+2]
 			if op == "&&" || op == "||" {
 				break
@@ -1015,7 +1039,7 @@ func parseFilterCondition(content string) (filterCondition, error) {
 		return parseFilterFunctionCall(funcName, argsStr)
 	}
 
-	// 查找比较操作符 - 使用括号深度跟踪避免匹配函数参数内的操作符
+	// 查找比较操作符 - 使用括号深度和方括号深度跟踪避免匹配函数参数和嵌套括号内的操作符
 	var operator string
 	var operatorIndex int
 	var operatorFound bool
@@ -1023,10 +1047,11 @@ func parseFilterCondition(content string) (filterCondition, error) {
 	// 按长度排序的操作符列表，确保先匹配较长的操作符
 	operators := []string{"<=", ">=", "==", "!=", "<", ">"}
 	for _, op := range operators {
-		// 从左到右查找第一个在顶层（括号深度为0）的操作符
+		// 从左到右查找第一个在顶层（括号深度和方括号深度均为0）的操作符
 		inQuotes := false
 		inSingleQuotes := false
 		parenDepth := 0
+		bracketDepth := 0
 		for i := 0; i <= len(content)-len(op); i++ {
 			ch := content[i]
 			if ch == '"' && !inSingleQuotes {
@@ -1048,7 +1073,15 @@ func parseFilterCondition(content string) (filterCondition, error) {
 				parenDepth--
 				continue
 			}
-			if parenDepth == 0 && content[i:i+len(op)] == op {
+			if ch == '[' {
+				bracketDepth++
+				continue
+			}
+			if ch == ']' {
+				bracketDepth--
+				continue
+			}
+			if parenDepth == 0 && bracketDepth == 0 && content[i:i+len(op)] == op {
 				// Check it's not a false match (e.g., "!=", not part of "!==")
 				isValid := true
 				// Ensure we're not inside quotes (already handled above)
@@ -1071,8 +1104,8 @@ func parseFilterCondition(content string) (filterCondition, error) {
 	if !operatorFound {
 		// No operator found - this could be an existence test
 		field := strings.TrimSpace(content)
-		// Check for invalid operator-like characters at top level
-		if strings.ContainsAny(field, "=<>!") {
+		// Check for invalid operator-like characters at top level (not inside brackets)
+		if hasTopLevelOperatorChar(field) {
 			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("no valid operator found in condition: %s", content), content)
 		}
 
@@ -1257,13 +1290,14 @@ func tryParseFunctionCall(content string) (string, string, bool) {
 }
 
 // hasTopLevelOperator checks if content has a comparison operator at the top level
-// (not inside parentheses or quotes)
+// (not inside parentheses, brackets, or quotes)
 func hasTopLevelOperator(content string) bool {
 	operators := []string{"<=", ">=", "==", "!=", "<", ">"}
 	for _, op := range operators {
 		inQuotes := false
 		inSingleQuotes := false
 		parenDepth := 0
+		bracketDepth := 0
 		for i := 0; i <= len(content)-len(op); i++ {
 			ch := content[i]
 			if (inQuotes || inSingleQuotes) && ch == '\\' && i+1 < len(content) {
@@ -1289,9 +1323,55 @@ func hasTopLevelOperator(content string) bool {
 				parenDepth--
 				continue
 			}
-			if parenDepth == 0 && content[i:i+len(op)] == op {
+			if ch == '[' {
+				bracketDepth++
+				continue
+			}
+			if ch == ']' {
+				bracketDepth--
+				continue
+			}
+			if parenDepth == 0 && bracketDepth == 0 && content[i:i+len(op)] == op {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// hasTopLevelOperatorChar checks if content has operator-like characters (=, <, >, !)
+// at the top level (not inside brackets or quotes)
+func hasTopLevelOperatorChar(content string) bool {
+	inQuotes := false
+	inSingleQuotes := false
+	bracketDepth := 0
+	for i := 0; i < len(content); i++ {
+		ch := content[i]
+		if (inQuotes || inSingleQuotes) && ch == '\\' && i+1 < len(content) {
+			i++
+			continue
+		}
+		if ch == '"' && !inSingleQuotes {
+			inQuotes = !inQuotes
+			continue
+		}
+		if ch == '\'' && !inQuotes {
+			inSingleQuotes = !inSingleQuotes
+			continue
+		}
+		if inQuotes || inSingleQuotes {
+			continue
+		}
+		if ch == '[' {
+			bracketDepth++
+			continue
+		}
+		if ch == ']' {
+			bracketDepth--
+			continue
+		}
+		if bracketDepth == 0 && (ch == '=' || ch == '<' || ch == '>' || ch == '!') {
+			return true
 		}
 	}
 	return false
@@ -1431,6 +1511,20 @@ func compareValues(value1 interface{}, operator string, value2 interface{}) (boo
 	}
 	if !validOperators[operator] {
 		return false, fmt.Errorf("invalid operator: %s", operator)
+	}
+
+	// Handle Nothing values
+	_, isNothing1 := value1.(Nothing)
+	_, isNothing2 := value2.(Nothing)
+	if isNothing1 || isNothing2 {
+		switch operator {
+		case "==":
+			return isNothing1 && isNothing2, nil // Nothing == Nothing → true
+		case "!=":
+			return !(isNothing1 && isNothing2), nil // Nothing != Nothing → false
+		default:
+			return false, nil
+		}
 	}
 
 	// 处理 nil 值

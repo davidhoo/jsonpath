@@ -6,6 +6,7 @@ import "encoding/json"
 type Node struct {
 	Location string      `json:"location"`
 	Value    interface{} `json:"value"`
+	Root     interface{} `json:"-"` // document root, not serialized
 }
 
 // NodeList represents a list of nodes

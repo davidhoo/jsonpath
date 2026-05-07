@@ -92,7 +92,18 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 		if err != nil {
 			return false, nil
 		}
+		// Check if the comparison value is also a function call
 		resolvedValue := resolveFilterValue(cond.value, item, root)
+		if valueStr, ok := cond.value.(string); ok {
+			if valFuncName, valArgsStr, isValFunc := isFunctionCall(valueStr); isValFunc {
+				valResult, valErr := evaluateFilterFunction(valFuncName, valArgsStr, item, root)
+				if valErr != nil {
+					resolvedValue = Nothing{}
+				} else {
+					resolvedValue = valResult
+				}
+			}
+		}
 		result, err := compareValues(funcResult, cond.operator, resolvedValue)
 		if err != nil {
 			return false, nil
@@ -101,34 +112,38 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 	}
 
 	// Handle function calls as comparison value (e.g., @.a == length(@.b))
-	if valueStr, ok := cond.value.(string); ok {
-		if funcName, argsStr, isFunc := isFunctionCall(valueStr); isFunc {
-			funcResult, err := evaluateFilterFunction(funcName, argsStr, item, root)
-			if err != nil {
-				return false, nil
-			}
-			var fieldValue interface{}
-			var fieldErr error
-			if cond.isRoot {
-				fieldValue, fieldErr = getFieldValue(root, cond.field)
-			} else {
-				fieldValue, fieldErr = getFieldValue(item, cond.field)
-			}
-			if fieldErr != nil {
-				switch cond.operator {
-				case "exists":
-					return false, nil
-				case "not_exists":
-					return true, nil
-				default:
+	// Skip match/search operators - they have dedicated handling below
+	if cond.operator != "match" && cond.operator != "search" && cond.operator != "not_match" && cond.operator != "not_search" {
+		if valueStr, ok := cond.value.(string); ok {
+			if funcName, argsStr, isFunc := isFunctionCall(valueStr); isFunc {
+				funcResult, err := evaluateFilterFunction(funcName, argsStr, item, root)
+				if err != nil {
 					return false, nil
 				}
+				var fieldValue interface{}
+				var fieldErr error
+				if cond.isRoot {
+					fieldValue, fieldErr = getFieldValue(root, cond.field)
+				} else {
+					fieldValue, fieldErr = getFieldValue(item, cond.field)
+				}
+				if fieldErr != nil {
+					// Field is absent - treat as Nothing and compare with function result
+					switch cond.operator {
+					case "exists":
+						return false, nil
+					case "not_exists":
+						return true, nil
+					default:
+						return compareValues(Nothing{}, cond.operator, funcResult)
+					}
+				}
+				result, err := compareValues(fieldValue, cond.operator, funcResult)
+				if err != nil {
+					return false, nil
+				}
+				return result, nil
 			}
-			result, err := compareValues(fieldValue, cond.operator, funcResult)
-			if err != nil {
-				return false, nil
-			}
-			return result, nil
 		}
 	}
 
@@ -225,36 +240,28 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 			// Resolve the comparison value
 			resolvedValue := resolveFilterValue(cond.value, item, root)
 
-			// If comparison value is also absent (nil from unresolved path), compare as Nothing
-			if resolvedValue == nil {
-				// Check if the comparison value itself is an absent reference
-				if cond.value != nil {
-					if str, ok := cond.value.(string); ok {
-						// Check if it's a reference to an absent field
-						if strings.HasPrefix(str, "@.") || strings.HasPrefix(str, "$.") {
-							// Both sides absent: == returns true, != returns false (per RFC 9535)
-							switch cond.operator {
-							case "==":
-								return true, nil
-							case "!=":
-								return false, nil
-							default:
-								return false, nil
-							}
-						}
+			// Check if the comparison value is a function call and evaluate it
+			if valueStr, ok := cond.value.(string); ok {
+				if valFuncName, valArgsStr, isValFunc := isFunctionCall(valueStr); isValFunc {
+					valResult, valErr := evaluateFilterFunction(valFuncName, valArgsStr, item, root)
+					if valErr != nil {
+						resolvedValue = Nothing{}
+					} else {
+						resolvedValue = valResult
 					}
+				} else if resolvedValue == nil && (strings.HasPrefix(valueStr, "@") || strings.HasPrefix(valueStr, "$")) {
+					// Path reference that resolved to nil → treat as Nothing
+					resolvedValue = Nothing{}
 				}
 			}
 
-			// For !=null, absent != null is true (RFC 9535: absent is not null)
-			if cond.operator == "!=" && resolvedValue == nil {
-				// Check if comparing to literal null
-				if cond.value == nil {
-					return true, nil
-				}
+			// Treat absent field as Nothing
+			nothingValue := Nothing{}
+			result, err := compareValues(nothingValue, cond.operator, resolvedValue)
+			if err != nil {
+				return false, nil
 			}
-
-			return false, nil
+			return result, nil
 		}
 	}
 
@@ -275,7 +282,18 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 		if !ok {
 			return false, nil
 		}
-		pattern, ok := resolvedValue.(string)
+		// Evaluate function call pattern if needed
+		matchPattern := resolvedValue
+		if valueStr, ok := cond.value.(string); ok {
+			if valFuncName, valArgsStr, isValFunc := isFunctionCall(valueStr); isValFunc {
+				valResult, valErr := evaluateFilterFunction(valFuncName, valArgsStr, item, root)
+				if valErr != nil {
+					return false, nil
+				}
+				matchPattern = valResult
+			}
+		}
+		pattern, ok := matchPattern.(string)
 		if !ok {
 			return false, nil
 		}
@@ -298,7 +316,18 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 		if !ok {
 			return false, nil
 		}
-		pattern, ok := resolvedValue.(string)
+		// Evaluate function call pattern if needed
+		searchPattern := resolvedValue
+		if valueStr, ok := cond.value.(string); ok {
+			if valFuncName, valArgsStr, isValFunc := isFunctionCall(valueStr); isValFunc {
+				valResult, valErr := evaluateFilterFunction(valFuncName, valArgsStr, item, root)
+				if valErr != nil {
+					return false, nil
+				}
+				searchPattern = valResult
+			}
+		}
+		pattern, ok := searchPattern.(string)
 		if !ok {
 			return false, nil
 		}
@@ -527,7 +556,16 @@ func evaluateFilterFunction(funcName, argsStr string, item interface{}, root int
 			if strings.HasPrefix(str, "$") || strings.HasPrefix(str, "@") {
 				str = normalizePathWhitespace(str)
 			}
-			if str == "@" {
+			// Check if the argument is itself a function call (e.g., value($..c))
+			if innerFuncName, innerArgsStr, isInnerFunc := isFunctionCall(str); isInnerFunc {
+				innerResult, innerErr := evaluateFilterFunction(innerFuncName, innerArgsStr, item, root)
+				if innerErr != nil {
+					// Function returned error → treat as Nothing
+					resolvedArgs[i] = Nothing{}
+				} else {
+					resolvedArgs[i] = innerResult
+				}
+			} else if str == "@" {
 				resolvedArgs[i] = item
 			} else if str == "$" {
 				resolvedArgs[i] = root
@@ -591,9 +629,17 @@ func evaluateFilterFunction(funcName, argsStr string, item interface{}, root int
 		}
 	}
 
+	// Check for Nothing arguments - if any argument is Nothing, the function returns Nothing
+	for _, arg := range resolvedArgs {
+		if _, ok := arg.(Nothing); ok {
+			return Nothing{}, nil
+		}
+	}
+
 	result, err := fn.Call(resolvedArgs)
 	if err != nil {
-		return nil, err
+		// Function error → return Nothing instead of error
+		return Nothing{}, nil
 	}
 
 	// Normalize numeric types

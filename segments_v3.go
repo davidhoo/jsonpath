@@ -23,6 +23,7 @@ func (s *wildcardSegmentV3) evaluate(node Node) (NodeList, error) {
 			result[i] = Node{
 				Location: node.Location + "[" + strconv.Itoa(i) + "]",
 				Value:    item,
+				Root:     node.Root,
 			}
 		}
 		return result, nil
@@ -32,6 +33,7 @@ func (s *wildcardSegmentV3) evaluate(node Node) (NodeList, error) {
 			result = append(result, Node{
 				Location: node.Location + "['" + escapeNormalizedPathKey(key) + "']",
 				Value:    val,
+				Root:     node.Root,
 			})
 		}
 		return result, nil
@@ -62,6 +64,7 @@ func (s *nameSegmentV3) evaluate(node Node) (NodeList, error) {
 	return NodeList{{
 		Location: node.Location + "['" + escapeNormalizedPathKey(s.name) + "']",
 		Value:    val,
+		Root:     node.Root,
 	}}, nil
 }
 
@@ -101,7 +104,7 @@ func (s *nameSegmentV3) evaluateFunction(node Node) (NodeList, error) {
 	case float32:
 		result = float64(v)
 	}
-	return NodeList{{Location: node.Location, Value: result}}, nil
+	return NodeList{{Location: node.Location, Value: result, Root: node.Root}}, nil
 }
 
 func (s *nameSegmentV3) String() string { return s.name }
@@ -123,6 +126,7 @@ func (s *indexSegmentV3) evaluate(node Node) (NodeList, error) {
 	return NodeList{{
 		Location: node.Location + "[" + strconv.Itoa(idx) + "]",
 		Value:    arr[idx],
+		Root:     node.Root,
 	}}, nil
 }
 
@@ -163,6 +167,7 @@ func (s *sliceSegmentV3) evaluate(node Node) (NodeList, error) {
 			result = append(result, Node{
 				Location: node.Location + "[" + strconv.Itoa(idx) + "]",
 				Value:    arr[idx],
+				Root:     node.Root,
 			})
 		}
 	}
@@ -257,6 +262,7 @@ func (s *multiIndexSegmentV3) evaluate(node Node) (NodeList, error) {
 			result = append(result, Node{
 				Location: node.Location + "[" + strconv.Itoa(idx) + "]",
 				Value:    arr[idx],
+				Root:     node.Root,
 			})
 		}
 	}
@@ -287,6 +293,7 @@ func (s *multiNameSegmentV3) evaluate(node Node) (NodeList, error) {
 			result = append(result, Node{
 				Location: node.Location + "['" + escapeNormalizedPathKey(name) + "']",
 				Value:    val,
+				Root:     node.Root,
 			})
 		}
 	}
@@ -318,6 +325,7 @@ func (s *recursiveSegmentV3) collect(node Node, result *NodeList) {
 			child := Node{
 				Location: node.Location + "[" + strconv.Itoa(i) + "]",
 				Value:    item,
+				Root:     node.Root,
 			}
 			*result = append(*result, child)
 			s.collect(child, result)
@@ -327,6 +335,7 @@ func (s *recursiveSegmentV3) collect(node Node, result *NodeList) {
 			child := Node{
 				Location: node.Location + "['" + escapeNormalizedPathKey(key) + "']",
 				Value:    val,
+				Root:     node.Root,
 			}
 			*result = append(*result, child)
 			s.collect(child, result)
@@ -348,11 +357,16 @@ func (s *filterSegmentV3) evaluate(node Node) (NodeList, error) {
 	if node.Value == nil {
 		return nil, nil
 	}
+	// Use document root for expression evaluation (not node.Value)
+	root := node.Root
+	if root == nil {
+		root = node.Value
+	}
 	if m, ok := node.Value.(map[string]interface{}); ok {
 		// RFC 9535: filter on object iterates through object values
 		var results NodeList
 		for key, item := range m {
-			result, err := s.expr.evaluate(item, node.Value)
+			result, err := s.expr.evaluate(item, root)
 			if err != nil {
 				return nil, err
 			}
@@ -360,6 +374,7 @@ func (s *filterSegmentV3) evaluate(node Node) (NodeList, error) {
 				results = append(results, Node{
 					Location: node.Location + "['" + escapeNormalizedPathKey(key) + "']",
 					Value:    item,
+					Root:     node.Root,
 				})
 			}
 		}
@@ -368,7 +383,7 @@ func (s *filterSegmentV3) evaluate(node Node) (NodeList, error) {
 	if arr, ok := node.Value.([]interface{}); ok {
 		var results NodeList
 		for i, item := range arr {
-			result, err := s.expr.evaluate(item, node.Value)
+			result, err := s.expr.evaluate(item, root)
 			if err != nil {
 				return nil, err
 			}
@@ -376,6 +391,7 @@ func (s *filterSegmentV3) evaluate(node Node) (NodeList, error) {
 				results = append(results, Node{
 					Location: node.Location + "[" + strconv.Itoa(i) + "]",
 					Value:    item,
+					Root:     node.Root,
 				})
 			}
 		}
@@ -435,11 +451,11 @@ func (s *functionSegmentV3) evaluate(node Node) (NodeList, error) {
 	if arr, ok := result.([]interface{}); ok {
 		nl := make(NodeList, len(arr))
 		for i, item := range arr {
-			nl[i] = Node{Location: node.Location, Value: item}
+			nl[i] = Node{Location: node.Location, Value: item, Root: node.Root}
 		}
 		return nl, nil
 	}
-	return NodeList{{Location: node.Location, Value: result}}, nil
+	return NodeList{{Location: node.Location, Value: result, Root: node.Root}}, nil
 }
 
 // resolvePath 解析并求值 JSONPath 表达式
@@ -580,7 +596,7 @@ func (a *oldSegmentAdapter) evaluate(node Node) (NodeList, error) {
 	}
 	nl := make(NodeList, len(results))
 	for i, r := range results {
-		nl[i] = Node{Location: node.Location, Value: r}
+		nl[i] = Node{Location: node.Location, Value: r, Root: node.Root}
 	}
 	return nl, nil
 }
