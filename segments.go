@@ -475,7 +475,7 @@ func (s *filterSegment) evaluate(data interface{}) ([]interface{}, error) {
 
 	// 处理 map 类型
 	if m, ok := data.(map[string]interface{}); ok {
-		result, err := s.expr.evaluate(m)
+		result, err := s.expr.evaluate(m, m)
 		if err != nil {
 			return nil, err
 		}
@@ -489,7 +489,7 @@ func (s *filterSegment) evaluate(data interface{}) ([]interface{}, error) {
 	if arr, ok := data.([]interface{}); ok {
 		var results []interface{}
 		for _, item := range arr {
-			result, err := s.expr.evaluate(item)
+			result, err := s.expr.evaluate(item, data)
 			if err != nil {
 				return nil, err
 			}
@@ -666,4 +666,29 @@ func (s *multiNameSegment) String() string {
 		names[i] = fmt.Sprintf("'%s'", name)
 	}
 	return fmt.Sprintf("[%s]", strings.Join(names, ","))
+}
+
+// unionSegment implements mixed selector types (e.g., $['a',1], $[1,5:7], $[*,1])
+type unionSegment struct {
+	selectors []segment
+}
+
+func (s *unionSegment) evaluate(value interface{}) ([]interface{}, error) {
+	var result []interface{}
+	for _, sel := range s.selectors {
+		items, err := sel.evaluate(value)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, items...)
+	}
+	return result, nil
+}
+
+func (s *unionSegment) String() string {
+	parts := make([]string, len(s.selectors))
+	for i, sel := range s.selectors {
+		parts[i] = sel.String()
+	}
+	return fmt.Sprintf("[%s]", strings.Join(parts, ","))
 }

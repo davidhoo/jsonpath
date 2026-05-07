@@ -61,38 +61,6 @@ func getCompiledRegex(pattern string) (*regexp.Regexp, error) {
 	return re, nil
 }
 
-// hasStartAnchor 检查模式是否已经有起始锚点
-func hasStartAnchor(pattern string) bool {
-	if len(pattern) == 0 {
-		return false
-	}
-	// 检查是否以 ^ 开头
-	if pattern[0] == '^' {
-		return true
-	}
-	// 检查是否以 (?= 或 (?: 开头（非捕获组或前瞻）
-	if len(pattern) > 2 && pattern[0] == '(' && (pattern[1] == '?' || pattern[1] == ':') {
-		return true
-	}
-	return false
-}
-
-// hasEndAnchor 检查模式是否已经有结束锚点
-func hasEndAnchor(pattern string) bool {
-	if len(pattern) == 0 {
-		return false
-	}
-	// 检查是否以 $ 结尾
-	if pattern[len(pattern)-1] == '$' {
-		return true
-	}
-	// 检查是否以 ) 结尾，然后可能有量词
-	if pattern[len(pattern)-1] == ')' {
-		return true
-	}
-	return false
-}
-
 // removeAnchors 移除模式中的 ^ 和 $ 锚点
 func removeAnchors(pattern string) string {
 	if len(pattern) == 0 {

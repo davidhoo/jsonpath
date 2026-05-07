@@ -344,19 +344,26 @@ func (s *filterSegmentV3) evaluate(node Node) (NodeList, error) {
 		return nil, nil
 	}
 	if m, ok := node.Value.(map[string]interface{}); ok {
-		result, err := s.expr.evaluate(m)
-		if err != nil {
-			return nil, err
+		// RFC 9535: filter on object iterates through object values
+		var results NodeList
+		for key, item := range m {
+			result, err := s.expr.evaluate(item, node.Value)
+			if err != nil {
+				return nil, err
+			}
+			if result {
+				results = append(results, Node{
+					Location: node.Location + "['" + escapeNormalizedPathKey(key) + "']",
+					Value:    item,
+				})
+			}
 		}
-		if result {
-			return NodeList{node}, nil
-		}
-		return nil, nil
+		return results, nil
 	}
 	if arr, ok := node.Value.([]interface{}); ok {
 		var results NodeList
 		for i, item := range arr {
-			result, err := s.expr.evaluate(item)
+			result, err := s.expr.evaluate(item, node.Value)
 			if err != nil {
 				return nil, err
 			}
@@ -541,6 +548,13 @@ func wrapSegments(oldSegs []segment) []segmentV3 {
 			newSegs[i] = &filterSegmentV3{expr: s.expr}
 		case *functionSegment:
 			newSegs[i] = &functionSegmentV3{name: s.name, args: s.args}
+		case *unionSegment:
+			unionV3 := &unionSegmentV3{selectors: make([]segmentV3, len(s.selectors))}
+			for j, sel := range s.selectors {
+				wrapped := wrapSegments([]segment{sel})
+				unionV3.selectors[j] = wrapped[0]
+			}
+			newSegs[i] = unionV3
 		default:
 			// Fallback: wrap in adapter
 			newSegs[i] = &oldSegmentAdapter{seg: s}
@@ -568,4 +582,29 @@ func (a *oldSegmentAdapter) evaluate(node Node) (NodeList, error) {
 
 func (a *oldSegmentAdapter) String() string {
 	return a.seg.String()
+}
+
+// unionSegmentV3 implements mixed selector types for the v3 interface
+type unionSegmentV3 struct {
+	selectors []segmentV3
+}
+
+func (s *unionSegmentV3) evaluate(node Node) (NodeList, error) {
+	var result NodeList
+	for _, sel := range s.selectors {
+		items, err := sel.evaluate(node)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, items...)
+	}
+	return result, nil
+}
+
+func (s *unionSegmentV3) String() string {
+	parts := make([]string, len(s.selectors))
+	for i, sel := range s.selectors {
+		parts[i] = sel.String()
+	}
+	return fmt.Sprintf("[%s]", strings.Join(parts, ","))
 }

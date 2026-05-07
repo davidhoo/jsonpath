@@ -217,38 +217,50 @@ func parseRegular(path string) ([]segment, error) {
 	var current string
 	var inBracket bool
 	var bracketContent string
+	var bracketDepth int
 
-	for i := 0; i < len(path); i++ {
-		char := path[i]
-
+	// Use rune iteration to properly handle multi-byte UTF-8 characters
+	for _, r := range path {
 		switch {
-		case char == '[':
+		case r == '[':
 			if inBracket {
-				return nil, NewError(ErrSyntax, "nested brackets not allowed", path)
+				// Inside bracket, nested brackets are allowed for filter expressions
+				// (e.g., $[?@.list[0]])
+				bracketDepth++
+				bracketContent += string(r)
+			} else {
+				if current != "" {
+					seg, err := createDotSegment(current)
+					if err != nil {
+						return nil, err
+					}
+					segments = append(segments, seg)
+					current = ""
+				}
+				inBracket = true
+				bracketDepth = 0
 			}
-			if current != "" {
-				seg, err := createDotSegment(current)
+
+		case r == ']':
+			if !inBracket {
+				return nil, NewError(ErrSyntax, "unexpected closing bracket", path)
+			}
+			if bracketDepth > 0 {
+				// Closing a nested bracket inside the filter
+				bracketDepth--
+				bracketContent += string(r)
+			} else {
+				// Closing the outer bracket
+				seg, err := parseBracketSegment(bracketContent)
 				if err != nil {
 					return nil, err
 				}
 				segments = append(segments, seg)
-				current = ""
+				bracketContent = ""
+				inBracket = false
 			}
-			inBracket = true
 
-		case char == ']':
-			if !inBracket {
-				return nil, NewError(ErrSyntax, "unexpected closing bracket", path)
-			}
-			seg, err := parseBracketSegment(bracketContent)
-			if err != nil {
-				return nil, err
-			}
-			segments = append(segments, seg)
-			bracketContent = ""
-			inBracket = false
-
-		case char == '.' && !inBracket:
+		case r == '.' && !inBracket:
 			if current != "" {
 				seg, err := createDotSegment(current)
 				if err != nil {
@@ -260,9 +272,9 @@ func parseRegular(path string) ([]segment, error) {
 
 		default:
 			if inBracket {
-				bracketContent += string(char)
+				bracketContent += string(r)
 			} else {
-				current += string(char)
+				current += string(r)
 			}
 		}
 	}
@@ -292,6 +304,9 @@ func createDotSegment(name string) (segment, error) {
 
 // 解析方括号段
 func parseBracketSegment(content string) (segment, error) {
+	// RFC 9535: whitespace is allowed around selectors in brackets
+	content = strings.TrimSpace(content)
+
 	// 处理通配符
 	if content == "*" {
 		return &wildcardSegment{}, nil
@@ -554,6 +569,9 @@ func negateNode(node exprNode) (exprNode, error) {
 
 // 解析过滤器表达式
 func parseFilterSegment(content string) (segment, error) {
+	// RFC 9535: allow whitespace in filter expressions
+	content = strings.TrimSpace(content)
+
 	// 检查是否是函数调用格式: functionName(arg1, arg2)
 	// 这是 RFC 9535 的 match() 和 search() 函数语法
 	if idx := strings.Index(content, "("); idx > 0 && strings.HasSuffix(content, ")") {
@@ -569,8 +587,12 @@ func parseFilterSegment(content string) (segment, error) {
 		}
 	}
 
-	// 检查语法
-	if !strings.HasPrefix(content, "@") && !strings.HasPrefix(content, "(@") && !strings.HasPrefix(content, "!") && !strings.HasPrefix(content, "(!") && !strings.HasPrefix(content, "(") {
+	// 检查语法 - 支持 @, $, 和函数调用作为过滤器表达式的开头
+	trimmed := strings.TrimSpace(content)
+	if !strings.HasPrefix(trimmed, "@") && !strings.HasPrefix(trimmed, "$") &&
+		!strings.HasPrefix(trimmed, "(@") && !strings.HasPrefix(trimmed, "($") &&
+		!strings.HasPrefix(trimmed, "!") && !strings.HasPrefix(trimmed, "(!") &&
+		!strings.HasPrefix(trimmed, "(") {
 		return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
 	}
 
@@ -601,7 +623,14 @@ func parseFilterSegment(content string) (segment, error) {
 			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
 		}
 		filterContent = content[2 : len(content)-1]
+	case strings.HasPrefix(content, "($"):
+		if !strings.HasSuffix(content, ")") {
+			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
+		}
+		filterContent = content[2 : len(content)-1]
 	case strings.HasPrefix(content, "@"):
+		filterContent = content
+	case strings.HasPrefix(content, "$"):
 		filterContent = content
 	case strings.HasPrefix(content, "!"):
 		// Keep the ! in the content for the parser to handle as unary operator
@@ -656,8 +685,11 @@ func parseFilterCondition(content string) (filterCondition, error) {
 		}
 	}
 
-	// 确保条件以 @ 开头
-	if !strings.HasPrefix(content, "@") {
+	// 确保条件以 @ 或 $ 开头
+	isRoot := false
+	if strings.HasPrefix(content, "$") {
+		isRoot = true
+	} else if !strings.HasPrefix(content, "@") {
 		if strings.HasPrefix(content, ".") {
 			content = "@" + content
 		} else {
@@ -676,17 +708,19 @@ func parseFilterCondition(content string) (filterCondition, error) {
 		pattern := strings.TrimSpace(parts[1][:len(parts[1])-1])
 
 		// 验证字段格式
-		if !strings.HasPrefix(field, "@") {
-			return filterCondition{}, NewError(ErrInvalidFilter, "filter condition must start with @", content)
+		if !strings.HasPrefix(field, "@") && !strings.HasPrefix(field, "$") {
+			return filterCondition{}, NewError(ErrInvalidFilter, "filter condition must start with @ or $", content)
 		}
 
 		// 移除引号
 		pattern = strings.Trim(pattern, "\"'")
 
+		fieldIsRoot := strings.HasPrefix(field, "$")
 		return filterCondition{
-			field:    strings.TrimPrefix(field, "@."),
+			field:    strings.TrimPrefix(strings.TrimPrefix(field, "@."), "$."),
 			operator: "match",
 			value:    pattern,
+			isRoot:   fieldIsRoot,
 		}, nil
 	}
 
@@ -733,10 +767,16 @@ func parseFilterCondition(content string) (filterCondition, error) {
 		if strings.ContainsAny(field, "=<>!") {
 			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("no valid operator found in condition: %s", content), content)
 		}
+		// Strip field prefix (@ or $)
+		field = strings.TrimPrefix(field, "@.")
+		field = strings.TrimPrefix(field, "$.")
+		field = strings.TrimPrefix(field, "@")
+		field = strings.TrimPrefix(field, "$")
 		return filterCondition{
-			field:    strings.TrimPrefix(field, "@."),
+			field:    field,
 			operator: "exists",
 			value:    nil,
+			isRoot:   isRoot,
 		}, nil
 	}
 
@@ -750,10 +790,17 @@ func parseFilterCondition(content string) (filterCondition, error) {
 		return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid value: %s", value), content)
 	}
 
+	// Strip field prefix (@ or $)
+	field = strings.TrimPrefix(field, "@.")
+	field = strings.TrimPrefix(field, "$.")
+	field = strings.TrimPrefix(field, "@")
+	field = strings.TrimPrefix(field, "$")
+
 	return filterCondition{
-		field:    strings.TrimPrefix(field, "@."),
+		field:    field,
 		operator: operator,
 		value:    parsedValue,
+		isRoot:   isRoot,
 	}, nil
 }
 
@@ -895,7 +942,71 @@ func compareValues(value1 interface{}, operator string, value2 interface{}) (boo
 		}
 	}
 
-	return false, fmt.Errorf("incompatible types for comparison")
+	// 处理数组类型 - RFC 9535 支持深度比较
+	if arr1, ok := value1.([]interface{}); ok {
+		if arr2, ok := value2.([]interface{}); ok {
+			switch operator {
+			case "==":
+				return deepCompareValues(arr1, arr2), nil
+			case "!=":
+				return !deepCompareValues(arr1, arr2), nil
+			default:
+				return false, nil
+			}
+		}
+	}
+
+	// 处理对象类型 - RFC 9535 支持深度比较
+	if obj1, ok := value1.(map[string]interface{}); ok {
+		if obj2, ok := value2.(map[string]interface{}); ok {
+			switch operator {
+			case "==":
+				return deepCompareValues(obj1, obj2), nil
+			case "!=":
+				return !deepCompareValues(obj1, obj2), nil
+			default:
+				return false, nil
+			}
+		}
+	}
+
+	// RFC 9535: comparison between incompatible types
+	// == returns false, != returns true
+	if operator == "!=" {
+		return true, nil
+	}
+	return false, nil
+}
+
+// deepCompareValues performs deep comparison of two values
+func deepCompareValues(a, b interface{}) bool {
+	switch v1 := a.(type) {
+	case []interface{}:
+		v2, ok := b.([]interface{})
+		if !ok || len(v1) != len(v2) {
+			return false
+		}
+		for i := range v1 {
+			if !deepCompareValues(v1[i], v2[i]) {
+				return false
+			}
+		}
+		return true
+	case map[string]interface{}:
+		v2, ok := b.(map[string]interface{})
+		if !ok || len(v1) != len(v2) {
+			return false
+		}
+		for k, val1 := range v1 {
+			val2, exists := v2[k]
+			if !exists || !deepCompareValues(val1, val2) {
+				return false
+			}
+		}
+		return true
+	default:
+		return a == b
+	}
 }
 
 // normalizeNumbers 将两个值转换为 float64 类型
@@ -987,7 +1098,7 @@ func isValidIdentifier(s string) bool {
 	return true
 }
 
-// 解析多索引选择
+// 解析多索引选择 - RFC 9535 支持混合选择器类型
 func parseMultiIndexSegment(content string) (segment, error) {
 	// 检查前导和尾随逗号
 	if strings.HasPrefix(content, ",") {
@@ -1006,94 +1117,76 @@ func parseMultiIndexSegment(content string) (segment, error) {
 		}
 	}
 
-	// 检查是否包含字符串字段名
-	// 检查是否包含字符串字段名
-	hasString := false
-	hasQuotedString := false
+	// RFC 9535: 每个部分独立解析，支持混合选择器类型
+	// 先尝试解析每个部分
+	selectors := make([]segment, 0, len(parts))
+	allIndices := true
+	allNames := true
+
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)
-		// 检查是否是字符串字段名（带引号）
+
+		// 检查是否是通配符
+		if trimmed == "*" {
+			selectors = append(selectors, &wildcardSegment{})
+			allIndices = false
+			allNames = false
+			continue
+		}
+
+		// 检查是否是切片
+		if strings.Contains(trimmed, ":") {
+			slice, err := parseSliceSegment(trimmed)
+			if err != nil {
+				return nil, err
+			}
+			selectors = append(selectors, slice)
+			allIndices = false
+			allNames = false
+			continue
+		}
+
+		// 检查是否是带引号的字符串
 		if (strings.HasPrefix(trimmed, "'") && strings.HasSuffix(trimmed, "'")) ||
 			(strings.HasPrefix(trimmed, "\"") && strings.HasSuffix(trimmed, "\"")) {
-			hasString = true
-			hasQuotedString = true
-			break
+			name := trimmed[1 : len(trimmed)-1]
+			selectors = append(selectors, &nameSegment{name: name})
+			allIndices = false
+			continue
 		}
-		// 检查是否是非数字的字段名
-		if _, err := strconv.Atoi(trimmed); err != nil {
-			// 如果不是带引号的字符串，但也不是数字，可能是无效索引或不带引号的字段名
-			// 我们需要进一步判断
-			hasString = true
-			break
+
+		// 尝试解析为数字索引
+		if idx, err := strconv.Atoi(trimmed); err == nil {
+			selectors = append(selectors, &indexSegment{index: idx})
+			allNames = false
+			continue
 		}
+
+		// 不是数字也不是带引号的字符串，可能是不带引号的字段名
+		selectors = append(selectors, &nameSegment{name: trimmed})
+		allIndices = false
 	}
 
-	// 如果有引号字符串，或者所有非数字部分都是有效的字段名，则作为多字段段处理
-	if hasString && hasQuotedString {
-		// 有引号字符串，按多字段段处理
-		names := make([]string, 0, len(parts))
-		for _, part := range parts {
-			trimmed := strings.TrimSpace(part)
-			// 处理带引号的字符串
-			if (strings.HasPrefix(trimmed, "'") && strings.HasSuffix(trimmed, "'")) ||
-				(strings.HasPrefix(trimmed, "\"") && strings.HasSuffix(trimmed, "\"")) {
-				names = append(names, trimmed[1:len(trimmed)-1])
-			} else {
-				// 处理不带引号的字段名
-				names = append(names, trimmed)
-			}
+	// 如果所有部分都是索引，返回多索引段
+	if allIndices {
+		indices := make([]int, len(selectors))
+		for i, sel := range selectors {
+			indices[i] = sel.(*indexSegment).index
+		}
+		return &multiIndexSegment{indices: indices}, nil
+	}
+
+	// 如果所有部分都是名称，返回多名称段
+	if allNames {
+		names := make([]string, len(selectors))
+		for i, sel := range selectors {
+			names[i] = sel.(*nameSegment).name
 		}
 		return &multiNameSegment{names: names}, nil
 	}
 
-	// 检查是否所有部分都是有效的字段名（不带引号但也不是纯数字）
-	if hasString && !hasQuotedString {
-		// 检查是否所有部分都是数字或者所有部分都是有效的标识符
-		allNumbers := true
-		allValidNames := true
-
-		for _, part := range parts {
-			trimmed := strings.TrimSpace(part)
-			if _, err := strconv.Atoi(trimmed); err != nil {
-				// 不是数字
-				allNumbers = false
-				if !isValidIdentifier(trimmed) {
-					allValidNames = false
-				}
-			} else {
-				// 是数字，但在混合情况下不应该作为字段名
-				allValidNames = false
-			}
-		}
-
-		// 如果混合了数字和非数字，这是无效的
-		if !allNumbers && !allValidNames {
-			return nil, NewError(ErrInvalidPath, "cannot mix numeric indices and field names", content)
-		}
-
-		if allValidNames {
-			// 所有部分都是有效标识符，按多字段段处理
-			names := make([]string, 0, len(parts))
-			for _, part := range parts {
-				trimmed := strings.TrimSpace(part)
-				names = append(names, trimmed)
-			}
-			return &multiNameSegment{names: names}, nil
-		}
-	}
-
-	// 否则解析为多索引段
-	indices := make([]int, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		idx, err := strconv.Atoi(trimmed)
-		if err != nil {
-			return nil, NewError(ErrInvalidPath, fmt.Sprintf("invalid index: %s", trimmed), content)
-		}
-		indices = append(indices, idx)
-	}
-
-	return &multiIndexSegment{indices: indices}, nil
+	// 混合类型，返回联合段
+	return &unionSegment{selectors: selectors}, nil
 }
 
 // 解析切片表达式
@@ -1235,6 +1328,26 @@ func parseFilterValue(valueStr string) (interface{}, error) {
 	// 尝试解析为数字
 	if num, err := strconv.ParseFloat(valueStr, 64); err == nil {
 		return num, nil
+	}
+
+	// 处理 $ 引用（根节点）
+	if valueStr == "$" {
+		return "$", nil
+	}
+
+	// 处理 @ 引用（当前元素）
+	if valueStr == "@" {
+		return "@", nil
+	}
+
+	// 处理 $.path 引用（根节点路径）
+	if strings.HasPrefix(valueStr, "$.") || strings.HasPrefix(valueStr, "$[") {
+		return valueStr, nil
+	}
+
+	// 处理 @.path 引用（当前元素路径）
+	if strings.HasPrefix(valueStr, "@.") || strings.HasPrefix(valueStr, "@[") {
+		return valueStr, nil
 	}
 
 	// 如果不是其他类型，返回错误

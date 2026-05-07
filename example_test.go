@@ -1227,6 +1227,7 @@ func TestExistenceFilter(t *testing.T) {
 			json: `[{"a":null},{"a":1}]`,
 			path: `$[?@.a]`,
 			expected: NodeList{
+				{Location: "$[0]", Value: map[string]interface{}{"a": nil}},
 				{Location: "$[1]", Value: map[string]interface{}{"a": float64(1)}},
 			},
 		},
@@ -1302,19 +1303,6 @@ func nodeListEqual(a, b NodeList) bool {
 	}
 	for i := range a {
 		if !reflect.DeepEqual(a[i].Value, b[i].Value) {
-			return false
-		}
-	}
-	return true
-}
-
-// nodeListEqualWithLocation compares two NodeLists including Location
-func nodeListEqualWithLocation(a, b NodeList) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].Location != b[i].Location || !reflect.DeepEqual(a[i].Value, b[i].Value) {
 			return false
 		}
 	}

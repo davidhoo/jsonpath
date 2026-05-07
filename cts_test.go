@@ -68,15 +68,19 @@ func normalizeForCompare(v interface{}) interface{} {
 
 // wrapInNodelist wraps the Query() result into a nodelist (array) format
 // that matches the CTS expected output.
-// Query() returns:
-//   - nil or empty for no results
-//   - single value for one result
-//   - []interface{} for multiple results
+// Query() returns a NodeList ([]Node), each Node having Location and Value.
+// CTS expects a flat array of values (not Node structs).
 func wrapInNodelist(result interface{}) []interface{} {
 	if result == nil {
 		return []interface{}{}
 	}
 	switch v := result.(type) {
+	case NodeList:
+		out := make([]interface{}, len(v))
+		for i, n := range v {
+			out[i] = n.Value
+		}
+		return out
 	case []interface{}:
 		return v
 	default:

@@ -136,7 +136,8 @@ func TestParseMultiIndexSegment(t *testing.T) {
 		{
 			name:    "invalid index",
 			content: "1,a,3",
-			wantErr: true,
+			want:    &unionSegment{selectors: []segment{&indexSegment{index: 1}, &nameSegment{name: "a"}, &indexSegment{index: 3}}},
+			wantErr: false,
 		},
 		{
 			name:    "empty index",
@@ -168,7 +169,7 @@ func TestParseMultiIndexSegment(t *testing.T) {
 		{
 			name:    "mixed quoted names and indices",
 			content: "'name',1,'age'",
-			want:    &multiNameSegment{names: []string{"name", "1", "age"}},
+			want:    &unionSegment{selectors: []segment{&nameSegment{name: "name"}, &indexSegment{index: 1}, &nameSegment{name: "age"}}},
 			wantErr: false,
 		},
 		{
@@ -850,34 +851,50 @@ func TestOperatorPrecedence(t *testing.T) {
 		{
 			name: "AND higher than OR",
 			path: `$[?(@.a==1||@.b==2&&@.c==3)]`,
-			document: map[string]interface{}{
-				"a": 1, "b": 0, "c": 0,
+			document: []interface{}{
+				map[string]interface{}{"a": 1, "b": 0, "c": 0},
+				map[string]interface{}{"a": 0, "b": 2, "c": 3},
+				map[string]interface{}{"a": 0, "b": 2, "c": 0},
 			},
-			expected: []interface{}{map[string]interface{}{"a": 1, "b": 0, "c": 0}},
+			expected: []interface{}{
+				map[string]interface{}{"a": 1, "b": 0, "c": 0},
+				map[string]interface{}{"a": 0, "b": 2, "c": 3},
+			},
 		},
 		{
 			name: "OR with AND",
 			path: `$[?(@.a==0||@.b==2&&@.c==3)]`,
-			document: map[string]interface{}{
-				"a": 0, "b": 2, "c": 3,
+			document: []interface{}{
+				map[string]interface{}{"a": 0, "b": 2, "c": 3},
+				map[string]interface{}{"a": 1, "b": 0, "c": 0},
 			},
-			expected: []interface{}{map[string]interface{}{"a": 0, "b": 2, "c": 3}},
+			expected: []interface{}{
+				map[string]interface{}{"a": 0, "b": 2, "c": 3},
+			},
 		},
 		{
 			name: "AND with OR",
 			path: `$[?(@.a==0||@.b==2&&@.c==0)]`,
-			document: map[string]interface{}{
-				"a": 0, "b": 2, "c": 0,
+			document: []interface{}{
+				map[string]interface{}{"a": 0, "b": 2, "c": 0},
+				map[string]interface{}{"a": 1, "b": 0, "c": 0},
 			},
-			expected: []interface{}{map[string]interface{}{"a": 0, "b": 2, "c": 0}},
+			expected: []interface{}{
+				map[string]interface{}{"a": 0, "b": 2, "c": 0},
+			},
 		},
 		{
 			name: "Parentheses override precedence",
 			path: `$[?((@.a==1||@.b==2)&&@.c==3)]`,
-			document: map[string]interface{}{
-				"a": 1, "b": 0, "c": 3,
+			document: []interface{}{
+				map[string]interface{}{"a": 1, "b": 0, "c": 3},
+				map[string]interface{}{"a": 0, "b": 2, "c": 3},
+				map[string]interface{}{"a": 1, "b": 0, "c": 0},
 			},
-			expected: []interface{}{map[string]interface{}{"a": 1, "b": 0, "c": 3}},
+			expected: []interface{}{
+				map[string]interface{}{"a": 1, "b": 0, "c": 3},
+				map[string]interface{}{"a": 0, "b": 2, "c": 3},
+			},
 		},
 	}
 
@@ -946,13 +963,13 @@ func TestExistenceFilterParsing(t *testing.T) {
 			name:         "bare @ with > operator",
 			path:         `$[?@>3]`,
 			wantOperator: ">",
-			wantField:    "@",
+			wantField:    "",
 		},
 		{
 			name:         "bare @ with == operator",
 			path:         `$[?@=="b"]`,
 			wantOperator: "==",
-			wantField:    "@",
+			wantField:    "",
 		},
 	}
 
