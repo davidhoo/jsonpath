@@ -410,9 +410,6 @@ func (s *functionSegmentV3) evaluate(node Node) (NodeList, error) {
 	if err != nil {
 		return nil, err
 	}
-	if result == nil {
-		return nil, nil
-	}
 	switch v := result.(type) {
 	case int:
 		result = float64(v)

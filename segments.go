@@ -595,11 +595,6 @@ func (s *functionSegment) evaluate(value interface{}) ([]interface{}, error) {
 		return nil, err
 	}
 
-	// 将结果包装在数组中返回
-	if result == nil {
-		return nil, nil
-	}
-
 	// 处理数值类型转换
 	switch v := result.(type) {
 	case int:
