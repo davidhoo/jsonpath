@@ -36,8 +36,23 @@ func parse(path string) ([]segment, error) {
 		return nil, nil
 	}
 
+	// Reject path that is only whitespace after $ (e.g. "$ ")
+	if strings.TrimSpace(path) == "" {
+		return nil, NewError(ErrSyntax, "invalid path: trailing whitespace after $", "$"+path)
+	}
+
 	// 移除前导点
-	path = strings.TrimPrefix(path, ".")
+	dotStripped := false
+	if strings.HasPrefix(path, ".") {
+		path = path[1:]
+		dotStripped = true
+	}
+
+	// Reject whitespace between dot and name (e.g. "$. a" after stripping $)
+	// Only applies when a dot was actually stripped from the path
+	if dotStripped && len(path) > 0 && (path[0] == ' ' || path[0] == '\t' || path[0] == '\n' || path[0] == '\r') {
+		return nil, NewError(ErrSyntax, "whitespace is not allowed between dot and member name", "$")
+	}
 
 	// 处理递归下降
 	if strings.HasPrefix(path, ".") {
@@ -188,13 +203,13 @@ func parseSingleFunctionArg(arg string) (interface{}, error) {
 
 // 解析递归下降路径
 func parseRecursive(path string) ([]segment, error) {
+	// Reject bare recursive descent: $..
+	if path == "" {
+		return nil, NewError(ErrSyntax, "bare recursive descent is not allowed", "..")
+	}
+
 	var segments []segment
 	segments = append(segments, &recursiveSegment{})
-
-	// 如果路径为空，直接返回
-	if path == "" {
-		return segments, nil
-	}
 
 	// 移除前导点
 	path = strings.TrimPrefix(path, ".")
@@ -218,6 +233,8 @@ func parseRegular(path string) ([]segment, error) {
 	var inBracket bool
 	var bracketContent string
 	var bracketDepth int
+	afterDot := false
+	parenDepth := 0
 
 	// Use rune iteration to properly handle multi-byte UTF-8 characters
 	for _, r := range path {
@@ -239,6 +256,7 @@ func parseRegular(path string) ([]segment, error) {
 				}
 				inBracket = true
 				bracketDepth = 0
+				afterDot = false
 			}
 
 		case r == ']':
@@ -260,8 +278,38 @@ func parseRegular(path string) ([]segment, error) {
 				inBracket = false
 			}
 
+		case r == '(' && !inBracket:
+			parenDepth++
+			current += string(r)
+			afterDot = false
+
+		case r == ')' && !inBracket:
+			parenDepth--
+			current += string(r)
+			afterDot = false
+
 		case r == '.' && !inBracket:
 			if current != "" {
+				seg, err := createDotSegment(current)
+				if err != nil {
+					return nil, err
+				}
+				segments = append(segments, seg)
+				current = ""
+			}
+			afterDot = true
+
+		case (r == ' ' || r == '\t' || r == '\n' || r == '\r') && !inBracket && parenDepth == 0:
+			// RFC 9535: whitespace is allowed between root and dot (e.g. "$ .a")
+			// but NOT between dot and name (e.g. "$. a" is invalid).
+			if afterDot {
+				// Whitespace immediately after dot: invalid
+				return nil, NewError(ErrSyntax, "whitespace is not allowed between dot and member name", path)
+			}
+			if current == "" {
+				// Leading whitespace (e.g. "$ .a"), skip it
+			} else {
+				// Whitespace after a name: flush the name as a segment
 				seg, err := createDotSegment(current)
 				if err != nil {
 					return nil, err
@@ -275,6 +323,7 @@ func parseRegular(path string) ([]segment, error) {
 				bracketContent += string(r)
 			} else {
 				current += string(r)
+				afterDot = false
 			}
 		}
 	}
@@ -299,13 +348,64 @@ func createDotSegment(name string) (segment, error) {
 	if name == "*" {
 		return &wildcardSegment{}, nil
 	}
+	// Only validate non-function names (functions are handled by nameSegmentV3.evaluateFunction)
+	if !strings.Contains(name, "(") && !isValidMemberName(name) {
+		return nil, NewError(ErrSyntax, fmt.Sprintf("invalid member name: %s", name), name)
+	}
 	return &nameSegment{name: name}, nil
+}
+
+// isValidMemberName checks if a name is valid for dot notation per RFC 9535.
+// member-name-shorthand = name-first *name-char
+// name-first = %x41-5A / "_" / %x61-7A / %x80-10FFFF  (letter / "_" / non-ASCII)
+// name-char = name-first / %x30-39  (name-first / digit)
+func isValidMemberName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if i == 0 {
+			if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '_' || r >= 0x80) {
+				return false
+			}
+		} else {
+			if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r >= 0x80) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // 解析方括号段
 func parseBracketSegment(content string) (segment, error) {
 	// RFC 9535: whitespace is allowed around selectors in brackets
 	content = strings.TrimSpace(content)
+
+	// Reject empty brackets: $[]
+	if content == "" {
+		return nil, NewError(ErrSyntax, "empty bracket segment", "")
+	}
+
+	// Reject @ outside of filter expression (must be preceded by ?)
+	if strings.HasPrefix(content, "@") {
+		return nil, NewError(ErrSyntax, "@ is only allowed inside filter expressions", content)
+	}
+
+	// Reject $ outside of filter expression (must be preceded by ?)
+	if strings.HasPrefix(content, "$") {
+		return nil, NewError(ErrSyntax, "$ is only allowed inside filter expressions", content)
+	}
+
+	// Reject space-separated indices: $[0 2]
+	// After trimming, check if content looks like "0 2" (numbers separated by space)
+	if strings.Contains(content, " ") && !strings.Contains(content, ",") && !strings.HasPrefix(content, "?") && !strings.HasPrefix(content, "'") && !strings.HasPrefix(content, "\"") {
+		// Check if it looks like space-separated tokens (not just whitespace in a string)
+		parts := strings.Fields(content)
+		if len(parts) > 1 {
+			return nil, NewError(ErrSyntax, "space is not a valid separator in bracket selector, use comma", content)
+		}
+	}
 
 	// 处理通配符
 	if content == "*" {
@@ -869,7 +969,7 @@ func compareValues(value1 interface{}, operator string, value2 interface{}) (boo
 		case "!=":
 			return value1 != value2, nil
 		default:
-			return false, fmt.Errorf("invalid operator for nil values: %s", operator)
+			return false, nil
 		}
 	}
 
@@ -937,7 +1037,7 @@ func compareValues(value1 interface{}, operator string, value2 interface{}) (boo
 			case "!=":
 				return bool1 != bool2, nil
 			default:
-				return false, fmt.Errorf("invalid operator for booleans: %s", operator)
+				return false, nil
 			}
 		}
 	}

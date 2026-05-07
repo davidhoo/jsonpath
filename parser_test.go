@@ -17,9 +17,11 @@ func TestParseRecursive(t *testing.T) {
 		errContains string
 	}{
 		{
-			name:    "empty path",
-			path:    "",
-			wantLen: 1, // 只包含递归段
+			name:        "empty path (bare recursive descent)",
+			path:        "",
+			wantErr:     true,
+			errType:     ErrSyntax,
+			errContains: "bare recursive descent",
 		},
 		{
 			name:    "simple recursive",
