@@ -84,6 +84,54 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 		return root != nil, nil
 	}
 
+	// Handle function calls as field (e.g., count(@..*)>2, length(@.a)==2)
+	// This must be checked BEFORE non-singular path check since function calls
+	// may contain non-singular selectors (like @..*) as arguments
+	if funcName, argsStr, isFunc := isFunctionCall(cond.field); isFunc {
+		funcResult, err := evaluateFilterFunction(funcName, argsStr, item, root)
+		if err != nil {
+			return false, nil
+		}
+		resolvedValue := resolveFilterValue(cond.value, item, root)
+		result, err := compareValues(funcResult, cond.operator, resolvedValue)
+		if err != nil {
+			return false, nil
+		}
+		return result, nil
+	}
+
+	// Handle function calls as comparison value (e.g., @.a == length(@.b))
+	if valueStr, ok := cond.value.(string); ok {
+		if funcName, argsStr, isFunc := isFunctionCall(valueStr); isFunc {
+			funcResult, err := evaluateFilterFunction(funcName, argsStr, item, root)
+			if err != nil {
+				return false, nil
+			}
+			var fieldValue interface{}
+			var fieldErr error
+			if cond.isRoot {
+				fieldValue, fieldErr = getFieldValue(root, cond.field)
+			} else {
+				fieldValue, fieldErr = getFieldValue(item, cond.field)
+			}
+			if fieldErr != nil {
+				switch cond.operator {
+				case "exists":
+					return false, nil
+				case "not_exists":
+					return true, nil
+				default:
+					return false, nil
+				}
+			}
+			result, err := compareValues(fieldValue, cond.operator, funcResult)
+			if err != nil {
+				return false, nil
+			}
+			return result, nil
+		}
+	}
+
 	// Handle non-singular paths (wildcard, slice, multi-index, descendant)
 	if isNonSingularPath(cond.field) {
 		// Build the path expression
@@ -370,4 +418,125 @@ func (c filterCondition) String() string {
 		}
 		return fmt.Sprintf("%s.%s %s %v", prefix, field, c.operator, value)
 	}
+}
+
+// isFunctionCall checks if a string looks like a function call (e.g., "count(@..*)")
+func isFunctionCall(s string) (string, string, bool) {
+	s = strings.TrimSpace(s)
+	if !strings.HasSuffix(s, ")") {
+		return "", "", false
+	}
+	idx := strings.Index(s, "(")
+	if idx <= 0 {
+		return "", "", false
+	}
+	funcName := s[:idx]
+	if !isValidFunctionName(funcName) {
+		return "", "", false
+	}
+	// Find the matching ')' for the '(' at idx
+	depth := 0
+	matchingIdx := -1
+	for i := idx; i < len(s); i++ {
+		if s[i] == '(' {
+			depth++
+		} else if s[i] == ')' {
+			depth--
+			if depth == 0 {
+				matchingIdx = i
+				break
+			}
+		}
+	}
+	// The matching ')' must be at the end of the string
+	if matchingIdx != len(s)-1 {
+		return "", "", false
+	}
+	argsStr := s[idx+1 : len(s)-1]
+	return funcName, argsStr, true
+}
+
+// evaluateFilterFunction evaluates a function call in a filter context
+func evaluateFilterFunction(funcName, argsStr string, item interface{}, root interface{}) (interface{}, error) {
+	fn, err := GetFunction(funcName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the arguments
+	args, err := parseFunctionArgsList(argsStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve @ and $ path references in arguments
+	resolvedArgs := make([]interface{}, len(args))
+	for i, arg := range args {
+		if str, ok := arg.(string); ok {
+			if str == "@" {
+				resolvedArgs[i] = item
+			} else if str == "$" {
+				resolvedArgs[i] = root
+			} else if strings.HasPrefix(str, "@") {
+				// Evaluate @.path or @[...] against the current item
+				pathExpr := "$" + strings.TrimPrefix(str, "@")
+				tempRoot := []interface{}{item}
+				adjustedPath := "$[0]" + strings.TrimPrefix(str, "@")
+				results, err := Query(tempRoot, adjustedPath)
+				if err != nil {
+					resolvedArgs[i] = nil
+				} else if len(results) == 1 {
+					resolvedArgs[i] = results[0].Value
+				} else if len(results) > 1 {
+					values := make([]interface{}, len(results))
+					for j, r := range results {
+						values[j] = r.Value
+					}
+					resolvedArgs[i] = values
+				} else {
+					resolvedArgs[i] = nil
+				}
+				_ = pathExpr
+			} else if strings.HasPrefix(str, "$") {
+				// Evaluate $.path or $[...] against the root
+				results, err := Query(root, str)
+				if err != nil {
+					resolvedArgs[i] = nil
+				} else if len(results) == 1 {
+					resolvedArgs[i] = results[0].Value
+				} else if len(results) > 1 {
+					values := make([]interface{}, len(results))
+					for j, r := range results {
+						values[j] = r.Value
+					}
+					resolvedArgs[i] = values
+				} else {
+					resolvedArgs[i] = nil
+				}
+			} else {
+				resolvedArgs[i] = arg
+			}
+		} else {
+			resolvedArgs[i] = arg
+		}
+	}
+
+	result, err := fn.Call(resolvedArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Normalize numeric types
+	switch v := result.(type) {
+	case int:
+		result = float64(v)
+	case int64:
+		result = float64(v)
+	case int32:
+		result = float64(v)
+	case float32:
+		result = float64(v)
+	}
+
+	return result, nil
 }

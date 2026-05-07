@@ -725,7 +725,7 @@ func TestNormalizeRange(t *testing.T) {
 	}{
 		{
 			name:      "default values with positive step",
-			segment:   &sliceSegment{start: 0, end: 0, step: 1},
+			segment:   &sliceSegment{start: 0, end: 0, step: 1, hasStart: false, hasEnd: false},
 			length:    5,
 			wantStart: 0,
 			wantEnd:   5,
@@ -733,7 +733,7 @@ func TestNormalizeRange(t *testing.T) {
 		},
 		{
 			name:      "default values with negative step",
-			segment:   &sliceSegment{start: 0, end: 0, step: -1},
+			segment:   &sliceSegment{start: 0, end: 0, step: -1, hasStart: false, hasEnd: false},
 			length:    5,
 			wantStart: 4,
 			wantEnd:   -1,
@@ -741,7 +741,7 @@ func TestNormalizeRange(t *testing.T) {
 		},
 		{
 			name:      "positive indices",
-			segment:   &sliceSegment{start: 1, end: 3, step: 1},
+			segment:   &sliceSegment{start: 1, end: 3, step: 1, hasStart: true, hasEnd: true},
 			length:    5,
 			wantStart: 1,
 			wantEnd:   3,
@@ -749,7 +749,7 @@ func TestNormalizeRange(t *testing.T) {
 		},
 		{
 			name:      "negative indices",
-			segment:   &sliceSegment{start: -2, end: -1, step: 1},
+			segment:   &sliceSegment{start: -2, end: -1, step: 1, hasStart: true, hasEnd: true},
 			length:    5,
 			wantStart: 3,
 			wantEnd:   4,
@@ -757,7 +757,7 @@ func TestNormalizeRange(t *testing.T) {
 		},
 		{
 			name:      "out of range indices",
-			segment:   &sliceSegment{start: 10, end: 20, step: 1},
+			segment:   &sliceSegment{start: 10, end: 20, step: 1, hasStart: true, hasEnd: true},
 			length:    5,
 			wantStart: 5,
 			wantEnd:   5,
@@ -765,7 +765,7 @@ func TestNormalizeRange(t *testing.T) {
 		},
 		{
 			name:      "negative out of range indices",
-			segment:   &sliceSegment{start: -10, end: -8, step: 1},
+			segment:   &sliceSegment{start: -10, end: -8, step: 1, hasStart: true, hasEnd: true},
 			length:    5,
 			wantStart: 0,
 			wantEnd:   0,
@@ -773,7 +773,7 @@ func TestNormalizeRange(t *testing.T) {
 		},
 		{
 			name:      "custom step",
-			segment:   &sliceSegment{start: 0, end: 5, step: 2},
+			segment:   &sliceSegment{start: 0, end: 5, step: 2, hasStart: true, hasEnd: true},
 			length:    5,
 			wantStart: 0,
 			wantEnd:   5,
@@ -781,15 +781,15 @@ func TestNormalizeRange(t *testing.T) {
 		},
 		{
 			name:      "negative step",
-			segment:   &sliceSegment{start: 4, end: 0, step: -1},
+			segment:   &sliceSegment{start: 4, end: 0, step: -1, hasStart: true, hasEnd: true},
 			length:    5,
 			wantStart: 4,
-			wantEnd:   -1,
+			wantEnd:   0,
 			wantStep:  -1,
 		},
 		{
 			name:      "zero step",
-			segment:   &sliceSegment{start: 0, end: 5, step: 0},
+			segment:   &sliceSegment{start: 0, end: 5, step: 0, hasStart: true, hasEnd: true},
 			length:    5,
 			wantStart: 0,
 			wantEnd:   5,
@@ -797,7 +797,7 @@ func TestNormalizeRange(t *testing.T) {
 		},
 		{
 			name:      "empty array",
-			segment:   &sliceSegment{start: 0, end: 0, step: 1},
+			segment:   &sliceSegment{start: 0, end: 0, step: 1, hasStart: false, hasEnd: false},
 			length:    0,
 			wantStart: 0,
 			wantEnd:   0,
@@ -914,9 +914,11 @@ func TestSliceSegmentEvaluate(t *testing.T) {
 		{
 			name: "positive step slice",
 			segment: &sliceSegment{
-				start: 1,
-				end:   4,
-				step:  1,
+				start:    1,
+				end:      4,
+				step:     1,
+				hasStart: true,
+				hasEnd:   true,
 			},
 			value:   []interface{}{1, 2, 3, 4, 5},
 			want:    []interface{}{2, 3, 4},
@@ -936,9 +938,11 @@ func TestSliceSegmentEvaluate(t *testing.T) {
 		{
 			name: "step with gap",
 			segment: &sliceSegment{
-				start: 0,
-				end:   5,
-				step:  2,
+				start:    0,
+				end:      5,
+				step:     2,
+				hasStart: true,
+				hasEnd:   true,
 			},
 			value:   []interface{}{1, 2, 3, 4, 5},
 			want:    []interface{}{1, 3, 5},
@@ -947,9 +951,11 @@ func TestSliceSegmentEvaluate(t *testing.T) {
 		{
 			name: "negative indices",
 			segment: &sliceSegment{
-				start: -2,
-				end:   0,
-				step:  1,
+				start:    -2,
+				end:      0,
+				step:     1,
+				hasStart: true,
+				hasEnd:   false,
 			},
 			value:   []interface{}{1, 2, 3, 4, 5},
 			want:    []interface{}{4, 5},
@@ -958,9 +964,11 @@ func TestSliceSegmentEvaluate(t *testing.T) {
 		{
 			name: "out of range indices",
 			segment: &sliceSegment{
-				start: 5,
-				end:   10,
-				step:  1,
+				start:    5,
+				end:      10,
+				step:     1,
+				hasStart: true,
+				hasEnd:   true,
 			},
 			value:   []interface{}{1, 2, 3, 4, 5},
 			want:    nil,
@@ -969,9 +977,11 @@ func TestSliceSegmentEvaluate(t *testing.T) {
 		{
 			name: "non-array value",
 			segment: &sliceSegment{
-				start: 0,
-				end:   5,
-				step:  1,
+				start:    0,
+				end:      5,
+				step:     1,
+				hasStart: true,
+				hasEnd:   true,
 			},
 			value:   "not an array",
 			want:    []interface{}{},
@@ -980,9 +990,11 @@ func TestSliceSegmentEvaluate(t *testing.T) {
 		{
 			name: "nil value",
 			segment: &sliceSegment{
-				start: 0,
-				end:   5,
-				step:  1,
+				start:    0,
+				end:      5,
+				step:     1,
+				hasStart: true,
+				hasEnd:   true,
 			},
 			value:   nil,
 			want:    []interface{}{},

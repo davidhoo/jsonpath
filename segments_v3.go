@@ -140,11 +140,16 @@ func (s *indexSegmentV3) String() string {
 // sliceSegmentV3 implements array slice ([start:end:step]) for the v3 interface
 type sliceSegmentV3 struct {
 	start, end, step int
+	hasStart, hasEnd bool
 }
 
 func (s *sliceSegmentV3) evaluate(node Node) (NodeList, error) {
 	arr, ok := node.Value.([]interface{})
 	if !ok {
+		return NodeList{}, nil
+	}
+	// RFC 9535: zero step selects no elements
+	if s.step == 0 {
 		return NodeList{}, nil
 	}
 	start, end, step := s.normalizeRange(len(arr))
@@ -170,7 +175,7 @@ func (s *sliceSegmentV3) normalizeRange(length int) (start, end, step int) {
 		step = 1
 	}
 	start = s.start
-	if start == 0 {
+	if !s.hasStart {
 		if step > 0 {
 			start = 0
 		} else {
@@ -193,7 +198,7 @@ func (s *sliceSegmentV3) normalizeRange(length int) (start, end, step int) {
 		}
 	}
 	end = s.end
-	if end == 0 {
+	if !s.hasEnd {
 		if step > 0 {
 			end = length
 		} else {
@@ -537,7 +542,7 @@ func wrapSegments(oldSegs []segment) []segmentV3 {
 		case *indexSegment:
 			newSegs[i] = &indexSegmentV3{index: s.index}
 		case *sliceSegment:
-			newSegs[i] = &sliceSegmentV3{start: s.start, end: s.end, step: s.step}
+			newSegs[i] = &sliceSegmentV3{start: s.start, end: s.end, step: s.step, hasStart: s.hasStart, hasEnd: s.hasEnd}
 		case *multiIndexSegment:
 			newSegs[i] = &multiIndexSegmentV3{indices: s.indices}
 		case *multiNameSegment:

@@ -230,21 +230,87 @@ func parseRecursive(path string) ([]segment, error) {
 func parseRegular(path string) ([]segment, error) {
 	var segments []segment
 	var current string
-	var inBracket bool
-	var bracketContent string
-	var bracketDepth int
 	afterDot := false
 	parenDepth := 0
 
 	// Use rune iteration to properly handle multi-byte UTF-8 characters
-	for _, r := range path {
+	runes := []rune(path)
+	i := 0
+	for i < len(runes) {
+		r := runes[i]
 		switch {
 		case r == '[':
-			if inBracket {
-				// Inside bracket, nested brackets are allowed for filter expressions
-				// (e.g., $[?@.list[0]])
-				bracketDepth++
-				bracketContent += string(r)
+			if current != "" {
+				seg, err := createDotSegment(current)
+				if err != nil {
+					return nil, err
+				}
+				segments = append(segments, seg)
+				current = ""
+			}
+			afterDot = false
+
+			// Find the matching closing bracket by counting bracket depth
+			// This correctly handles nested brackets in filter expressions
+			depth := 0
+			j := i + 1
+			inQuotes := false
+			inSingleQuotes := false
+			for j < len(runes) {
+				ch := runes[j]
+				// Handle escape sequences inside strings
+				if (inQuotes || inSingleQuotes) && ch == '\\' && j+1 < len(runes) {
+					j += 2 // skip the backslash and the next character
+					continue
+				}
+				if ch == '"' && !inSingleQuotes {
+					inQuotes = !inQuotes
+				} else if ch == '\'' && !inQuotes {
+					inSingleQuotes = !inSingleQuotes
+				} else if !inQuotes && !inSingleQuotes {
+					if ch == '[' {
+						depth++
+					} else if ch == ']' {
+						if depth == 0 {
+							break
+						}
+						depth--
+					}
+				}
+				j++
+			}
+			if j >= len(runes) {
+				return nil, NewError(ErrSyntax, "unclosed bracket", path)
+			}
+			bracketContent := string(runes[i+1 : j])
+			seg, err := parseBracketSegment(bracketContent)
+			if err != nil {
+				return nil, err
+			}
+			segments = append(segments, seg)
+			i = j // advance past the closing ']'
+
+		case r == '(' && i == 0:
+			// Handle leading parenthesis in dot notation
+			parenDepth++
+			current += string(r)
+			afterDot = false
+
+		case r == '(':
+			parenDepth++
+			current += string(r)
+			afterDot = false
+
+		case r == ')':
+			parenDepth--
+			current += string(r)
+			afterDot = false
+
+		case r == '.' && parenDepth == 0:
+			if afterDot {
+				// Second dot in ".." → recursive descent
+				segments = append(segments, &recursiveSegment{})
+				afterDot = false
 			} else {
 				if current != "" {
 					seg, err := createDotSegment(current)
@@ -254,52 +320,10 @@ func parseRegular(path string) ([]segment, error) {
 					segments = append(segments, seg)
 					current = ""
 				}
-				inBracket = true
-				bracketDepth = 0
-				afterDot = false
+				afterDot = true
 			}
 
-		case r == ']':
-			if !inBracket {
-				return nil, NewError(ErrSyntax, "unexpected closing bracket", path)
-			}
-			if bracketDepth > 0 {
-				// Closing a nested bracket inside the filter
-				bracketDepth--
-				bracketContent += string(r)
-			} else {
-				// Closing the outer bracket
-				seg, err := parseBracketSegment(bracketContent)
-				if err != nil {
-					return nil, err
-				}
-				segments = append(segments, seg)
-				bracketContent = ""
-				inBracket = false
-			}
-
-		case r == '(' && !inBracket:
-			parenDepth++
-			current += string(r)
-			afterDot = false
-
-		case r == ')' && !inBracket:
-			parenDepth--
-			current += string(r)
-			afterDot = false
-
-		case r == '.' && !inBracket:
-			if current != "" {
-				seg, err := createDotSegment(current)
-				if err != nil {
-					return nil, err
-				}
-				segments = append(segments, seg)
-				current = ""
-			}
-			afterDot = true
-
-		case (r == ' ' || r == '\t' || r == '\n' || r == '\r') && !inBracket && parenDepth == 0:
+		case (r == ' ' || r == '\t' || r == '\n' || r == '\r') && parenDepth == 0:
 			// RFC 9535: whitespace is allowed between root and dot (e.g. "$ .a")
 			// but NOT between dot and name (e.g. "$. a" is invalid).
 			if afterDot {
@@ -319,19 +343,13 @@ func parseRegular(path string) ([]segment, error) {
 			}
 
 		default:
-			if inBracket {
-				bracketContent += string(r)
-			} else {
-				current += string(r)
-				afterDot = false
-			}
+			current += string(r)
+			afterDot = false
 		}
+		i++
 	}
 
 	// 处理最后一个段
-	if inBracket {
-		return nil, NewError(ErrSyntax, "unclosed bracket", path)
-	}
 	if current != "" {
 		seg, err := createDotSegment(current)
 		if err != nil {
@@ -563,6 +581,12 @@ func (p *expressionParser) parsePrimary() (exprNode, error) {
 	for p.pos < len(p.input) {
 		ch := p.input[p.pos]
 
+		// Handle escape sequences inside strings
+		if (inQuotes || inSingleQuotes) && ch == '\\' && p.pos+1 < len(p.input) {
+			p.pos += 2 // skip backslash and the escaped character
+			continue
+		}
+
 		if ch == '"' && !inSingleQuotes {
 			inQuotes = !inQuotes
 			p.pos++
@@ -672,34 +696,50 @@ func parseFilterSegment(content string) (segment, error) {
 	// RFC 9535: allow whitespace in filter expressions
 	content = strings.TrimSpace(content)
 
-	// 检查是否是函数调用格式: functionName(arg1, arg2)
-	// 这是 RFC 9535 的 match() 和 search() 函数语法
-	if idx := strings.Index(content, "("); idx > 0 && strings.HasSuffix(content, ")") {
-		funcName := content[:idx]
-		if isValidFunctionName(funcName) {
-			// 这是一个函数调用，解析为过滤器表达式
-			argsStr := content[idx+1 : len(content)-1]
-			cond, err := parseFilterFunctionCall(funcName, argsStr)
-			if err != nil {
-				return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
-			}
-			return &filterSegment{expr: &conditionNode{cond: cond}}, nil
+	// 检查是否是完整的函数调用格式: functionName(arg1, arg2)
+	// 使用 tryParseFunctionCall 进行正确的括号匹配
+	if funcName, argsStr, ok := tryParseFunctionCall(content); ok {
+		cond, err := parseFilterFunctionCall(funcName, argsStr)
+		if err != nil {
+			return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
 		}
+		return &filterSegment{expr: &conditionNode{cond: cond}}, nil
 	}
 
-	// 检查语法 - 支持 @, $, 和函数调用作为过滤器表达式的开头
+	// 检查语法 - 支持 @, $, 函数调用, 和 ! 作为过滤器表达式的开头
 	trimmed := strings.TrimSpace(content)
+	isFunctionCallExpr := false
 	if !strings.HasPrefix(trimmed, "@") && !strings.HasPrefix(trimmed, "$") &&
 		!strings.HasPrefix(trimmed, "(@") && !strings.HasPrefix(trimmed, "($") &&
 		!strings.HasPrefix(trimmed, "!") && !strings.HasPrefix(trimmed, "(!") &&
 		!strings.HasPrefix(trimmed, "(") {
-		return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
+		// Check if it starts with a function name (e.g., count(@..*)>2, length(@.a)>=2)
+		if idx := strings.Index(trimmed, "("); idx > 0 {
+			funcName := trimmed[:idx]
+			if !isValidFunctionName(funcName) {
+				return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
+			}
+			// Check if there's a top-level comparison operator (not inside function parens)
+			// If so, it's a comparison expression, not a standalone function call
+			if hasTopLevelOperator(trimmed) {
+				// It's a comparison expression with function calls - pass to expression parser
+				isFunctionCallExpr = true
+			} else {
+				// Standalone function call - pass to expression parser
+				isFunctionCallExpr = true
+			}
+		} else {
+			return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
+		}
 	}
 
 	// 取过滤器内容
 	var filterContent string
 
 	switch {
+	case isFunctionCallExpr:
+		// Function call expression (e.g., count(@..*)>2) - pass to expression parser
+		filterContent = content
 	case strings.HasPrefix(content, "(!"):
 		if !strings.HasSuffix(content, ")") {
 			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
@@ -719,15 +759,50 @@ func parseFilterSegment(content string) (segment, error) {
 		// Keep the ! in the content for the parser to handle as unary operator
 		filterContent = content
 	case strings.HasPrefix(content, "(@"):
-		if !strings.HasSuffix(content, ")") {
-			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
+		// Check if outer parens match properly
+		depth := 0
+		matchIdx := -1
+		for i := 0; i < len(content); i++ {
+			if content[i] == '(' {
+				depth++
+			} else if content[i] == ')' {
+				depth--
+				if depth == 0 {
+					matchIdx = i
+					break
+				}
+			}
 		}
-		filterContent = content[2 : len(content)-1]
+		if matchIdx == len(content)-1 {
+			// The first '(' matches the last ')' - strip outer (@...)
+			filterContent = content[2 : len(content)-1]
+		} else {
+			// The first '(' doesn't match the last ')' - pass whole content to parser
+			// e.g., "(@.a || @.b) && @.c"
+			filterContent = content
+		}
 	case strings.HasPrefix(content, "($"):
-		if !strings.HasSuffix(content, ")") {
-			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
+		// Check if outer parens match properly
+		depth := 0
+		matchIdx := -1
+		for i := 0; i < len(content); i++ {
+			if content[i] == '(' {
+				depth++
+			} else if content[i] == ')' {
+				depth--
+				if depth == 0 {
+					matchIdx = i
+					break
+				}
+			}
 		}
-		filterContent = content[2 : len(content)-1]
+		if matchIdx == len(content)-1 {
+			// The first '(' matches the last ')' - strip outer ($...)
+			filterContent = content[2 : len(content)-1]
+		} else {
+			// The first '(' doesn't match the last ')' - pass whole content to parser
+			filterContent = content
+		}
 	case strings.HasPrefix(content, "@"):
 		filterContent = content
 	case strings.HasPrefix(content, "$"):
@@ -753,10 +828,28 @@ func parseFilterSegment(content string) (segment, error) {
 			return &filterSegment{expr: negated}, nil
 		}
 	case strings.HasPrefix(content, "("):
-		if !strings.HasSuffix(content, ")") {
-			return nil, NewError(ErrInvalidFilter, "invalid filter syntax: missing closing parenthesis", content)
+		// Check if the outer parens actually match (not just first and last char)
+		depth := 0
+		matchingIdx := -1
+		for i := 0; i < len(content); i++ {
+			if content[i] == '(' {
+				depth++
+			} else if content[i] == ')' {
+				depth--
+				if depth == 0 {
+					matchingIdx = i
+					break
+				}
+			}
 		}
-		filterContent = content[1 : len(content)-1]
+		if matchingIdx == len(content)-1 {
+			// The first '(' matches the last ')' - strip outer parens
+			filterContent = content[1 : len(content)-1]
+		} else {
+			// The first '(' doesn't match the last ')' - pass whole content to parser
+			// e.g., "(@.a || @.b) && @.c"
+			filterContent = content
+		}
 	default:
 		filterContent = content
 	}
@@ -806,56 +899,13 @@ func isNonSingularQuery(field string) bool {
 }
 
 func parseFilterCondition(content string) (filterCondition, error) {
-	// 检查是否是函数调用格式: functionName(arg1, arg2)
-	// 这是 RFC 9535 的 match() 和 search() 函数语法
-	if idx := strings.Index(content, "("); idx > 0 && strings.HasSuffix(content, ")") {
-		funcName := content[:idx]
-		if isValidFunctionName(funcName) {
-			argsStr := content[idx+1 : len(content)-1]
-			return parseFilterFunctionCall(funcName, argsStr)
-		}
+	// 检查是否是完整的函数调用（无比较操作符，如 match(@.a, 'pattern')）
+	// 先用括号深度跟踪来确认整个内容是一个函数调用
+	if funcName, argsStr, ok := tryParseFunctionCall(content); ok {
+		return parseFilterFunctionCall(funcName, argsStr)
 	}
 
-	// 确保条件以 @ 或 $ 开头
-	isRoot := false
-	if strings.HasPrefix(content, "$") {
-		isRoot = true
-	} else if !strings.HasPrefix(content, "@") {
-		if strings.HasPrefix(content, ".") {
-			content = "@" + content
-		} else {
-			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid condition: %s", content), content)
-		}
-	}
-
-	// 检查是否是旧式方法调用: @.field.match(pattern)
-	if strings.Contains(content, ".match(") {
-		parts := strings.Split(content, ".match(")
-		if len(parts) != 2 || !strings.HasSuffix(parts[1], ")") {
-			return filterCondition{}, NewError(ErrInvalidFilter, "invalid match function syntax", content)
-		}
-
-		field := strings.TrimSpace(parts[0])
-		pattern := strings.TrimSpace(parts[1][:len(parts[1])-1])
-
-		// 验证字段格式
-		if !strings.HasPrefix(field, "@") && !strings.HasPrefix(field, "$") {
-			return filterCondition{}, NewError(ErrInvalidFilter, "filter condition must start with @ or $", content)
-		}
-
-		// 移除引号
-		pattern = strings.Trim(pattern, "\"'")
-
-		fieldIsRoot := strings.HasPrefix(field, "$")
-		return filterCondition{
-			field:    strings.TrimPrefix(strings.TrimPrefix(field, "@."), "$."),
-			operator: "match",
-			value:    pattern,
-			isRoot:   fieldIsRoot,
-		}, nil
-	}
-
-	// 查找比较操作符
+	// 查找比较操作符 - 使用括号深度跟踪避免匹配函数参数内的操作符
 	var operator string
 	var operatorIndex int
 	var operatorFound bool
@@ -863,41 +913,78 @@ func parseFilterCondition(content string) (filterCondition, error) {
 	// 按长度排序的操作符列表，确保先匹配较长的操作符
 	operators := []string{"<=", ">=", "==", "!=", "<", ">"}
 	for _, op := range operators {
-		idx := strings.Index(content, op)
-		if idx != -1 {
-			// 确保这是一个独立的操作符，不是符串值的一部分
-			inQuotes := false
-			inParens := 0
-			isValid := true
-			for i := 0; i < idx; i++ {
-				switch content[i] {
-				case '"':
-					inQuotes = !inQuotes
-				case '(':
-					inParens++
-				case ')':
-					inParens--
+		// 从左到右查找第一个在顶层（括号深度为0）的操作符
+		inQuotes := false
+		inSingleQuotes := false
+		parenDepth := 0
+		for i := 0; i <= len(content)-len(op); i++ {
+			ch := content[i]
+			if ch == '"' && !inSingleQuotes {
+				inQuotes = !inQuotes
+				continue
+			}
+			if ch == '\'' && !inQuotes {
+				inSingleQuotes = !inSingleQuotes
+				continue
+			}
+			if inQuotes || inSingleQuotes {
+				continue
+			}
+			if ch == '(' {
+				parenDepth++
+				continue
+			}
+			if ch == ')' {
+				parenDepth--
+				continue
+			}
+			if parenDepth == 0 && content[i:i+len(op)] == op {
+				// Check it's not a false match (e.g., "!=", not part of "!==")
+				isValid := true
+				// Ensure we're not inside quotes (already handled above)
+				if inQuotes || inSingleQuotes {
+					isValid = false
+				}
+				if isValid {
+					operator = op
+					operatorIndex = i
+					operatorFound = true
+					break
 				}
 			}
-			if inQuotes || inParens > 0 {
-				isValid = false
-			}
-			if isValid {
-				operator = op
-				operatorIndex = idx
-				operatorFound = true
-				break
-			}
+		}
+		if operatorFound {
+			break
 		}
 	}
 
 	if !operatorFound {
-		// No operator found - validate that this is a valid field path
+		// No operator found - this could be an existence test
 		field := strings.TrimSpace(content)
-		// Check for invalid operator-like characters
+		// Check for invalid operator-like characters at top level
 		if strings.ContainsAny(field, "=<>!") {
 			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("no valid operator found in condition: %s", content), content)
 		}
+
+		// Check if this is a function call without comparison (invalid per RFC 9535 for some functions)
+		if _, _, isFunc := tryParseFunctionCall(field); isFunc {
+			// Standalone function calls like count(@..*), length(@.a), value(@.a)
+			// are invalid - they must be used in comparisons or as filter tests
+			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
+		}
+
+		// Determine if field is root ($) or current (@)
+		isRoot := false
+		if strings.HasPrefix(field, "$") {
+			isRoot = true
+		} else if strings.HasPrefix(field, "@") {
+			// ok
+		} else if strings.HasPrefix(field, ".") {
+			field = "@" + field
+		} else {
+			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid condition: %s", content), content)
+		}
+
 		// Strip field prefix (@ or $)
 		field = strings.TrimPrefix(field, "@.")
 		field = strings.TrimPrefix(field, "$.")
@@ -912,23 +999,71 @@ func parseFilterCondition(content string) (filterCondition, error) {
 	}
 
 	// 分割路径和值
-	field := strings.TrimSpace(content[:operatorIndex])
-	value := strings.TrimSpace(content[operatorIndex+len(operator):])
+	left := strings.TrimSpace(content[:operatorIndex])
+	right := strings.TrimSpace(content[operatorIndex+len(operator):])
+
+	// Check if the left side is a function call (e.g., length(@.a) == value($..c), count(@..*)>2)
+	if leftFuncName, leftArgsStr, isLeftFunc := tryParseFunctionCall(left); isLeftFunc {
+		// Left side is a function call - store for runtime evaluation
+		_ = leftFuncName
+		_ = leftArgsStr
+
+		// Parse the right side value
+		parsedValue, err := parseFilterValue(right)
+		if err != nil {
+			// Right side might also be a function call
+			if rightFuncName, rightArgsStr, isRightFunc := tryParseFunctionCall(right); isRightFunc {
+				_ = rightFuncName
+				_ = rightArgsStr
+				// Both sides are function calls - store the whole expression for runtime evaluation
+				return filterCondition{
+					field:    left,
+					operator: operator,
+					value:    right,
+					isRoot:   false,
+				}, nil
+			}
+			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid value: %s", right), content)
+		}
+
+		return filterCondition{
+			field:    left,
+			operator: operator,
+			value:    parsedValue,
+			isRoot:   false,
+		}, nil
+	}
+
+	// Determine isRoot from the left side
+	isRoot := false
+	if strings.HasPrefix(left, "$") {
+		isRoot = true
+	} else if !strings.HasPrefix(left, "@") {
+		if strings.HasPrefix(left, ".") {
+			left = "@" + left
+		} else {
+			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid condition: %s", content), content)
+		}
+	}
 
 	// RFC 9535: non-singular paths are not allowed in comparisons
-	// Check the left side (field) for non-singular queries
-	if isNonSingularQuery(field) {
+	if isNonSingularQuery(left) {
 		return filterCondition{}, NewError(ErrInvalidFilter, "non-singular query is not allowed in comparison", content)
 	}
 
 	// 解析值
-	parsedValue, err := parseFilterValue(value)
+	parsedValue, err := parseFilterValue(right)
 	if err != nil {
-		return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid value: %s", value), content)
+		// Right side might be a function call
+		if _, _, isRightFunc := tryParseFunctionCall(right); isRightFunc {
+			parsedValue = right // Store as string for runtime evaluation
+		} else {
+			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid value: %s", right), content)
+		}
 	}
 
 	// Strip field prefix (@ or $)
-	field = strings.TrimPrefix(field, "@.")
+	field := strings.TrimPrefix(left, "@.")
 	field = strings.TrimPrefix(field, "$.")
 	field = strings.TrimPrefix(field, "@")
 	field = strings.TrimPrefix(field, "$")
@@ -939,6 +1074,85 @@ func parseFilterCondition(content string) (filterCondition, error) {
 		value:    parsedValue,
 		isRoot:   isRoot,
 	}, nil
+}
+
+// tryParseFunctionCall attempts to parse content as a function call.
+// Returns (funcName, argsStr, true) if successful, ("", "", false) otherwise.
+func tryParseFunctionCall(content string) (string, string, bool) {
+	content = strings.TrimSpace(content)
+	if !strings.HasSuffix(content, ")") {
+		return "", "", false
+	}
+	// Find the opening paren
+	idx := strings.Index(content, "(")
+	if idx <= 0 {
+		return "", "", false
+	}
+	funcName := content[:idx]
+	if !isValidFunctionName(funcName) {
+		return "", "", false
+	}
+	// Find the matching ')' for the '(' at idx
+	depth := 0
+	matchingIdx := -1
+	for i := idx; i < len(content); i++ {
+		if content[i] == '(' {
+			depth++
+		} else if content[i] == ')' {
+			depth--
+			if depth == 0 {
+				matchingIdx = i
+				break
+			}
+		}
+	}
+	// The matching ')' must be at the end of the string
+	if matchingIdx != len(content)-1 {
+		return "", "", false
+	}
+	argsStr := content[idx+1 : len(content)-1]
+	return funcName, argsStr, true
+}
+
+// hasTopLevelOperator checks if content has a comparison operator at the top level
+// (not inside parentheses or quotes)
+func hasTopLevelOperator(content string) bool {
+	operators := []string{"<=", ">=", "==", "!=", "<", ">"}
+	for _, op := range operators {
+		inQuotes := false
+		inSingleQuotes := false
+		parenDepth := 0
+		for i := 0; i <= len(content)-len(op); i++ {
+			ch := content[i]
+			if (inQuotes || inSingleQuotes) && ch == '\\' && i+1 < len(content) {
+				i++
+				continue
+			}
+			if ch == '"' && !inSingleQuotes {
+				inQuotes = !inQuotes
+				continue
+			}
+			if ch == '\'' && !inQuotes {
+				inSingleQuotes = !inSingleQuotes
+				continue
+			}
+			if inQuotes || inSingleQuotes {
+				continue
+			}
+			if ch == '(' {
+				parenDepth++
+				continue
+			}
+			if ch == ')' {
+				parenDepth--
+				continue
+			}
+			if parenDepth == 0 && content[i:i+len(op)] == op {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // parseFilterFunctionCall 解析过滤器中的函数调用
@@ -1319,11 +1533,17 @@ func parseSliceSegment(content string) (segment, error) {
 	}
 
 	slice := &sliceSegment{start: 0, end: 0, step: 1}
+	hasStart := false
+	hasEnd := false
 
 	// 解析起始索引
 	if parts[0] != "" {
 		if !validateIntegerLiteral(parts[0]) {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice start index: %s", parts[0]), parts[0])
+		}
+		// Reject -0 (negative zero) per RFC 9535
+		if parts[0] == "-0" {
+			return nil, NewError(ErrSyntax, "negative zero is not a valid slice index", parts[0])
 		}
 		start, err := strconv.Atoi(parts[0])
 		if err != nil {
@@ -1333,12 +1553,17 @@ func parseSliceSegment(content string) (segment, error) {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("slice start index out of range: %d", start), parts[0])
 		}
 		slice.start = start
+		hasStart = true
 	}
 
 	// 解析结束索引
 	if len(parts) > 1 && parts[1] != "" {
 		if !validateIntegerLiteral(parts[1]) {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice end index: %s", parts[1]), parts[1])
+		}
+		// Reject -0 (negative zero) per RFC 9535
+		if parts[1] == "-0" {
+			return nil, NewError(ErrSyntax, "negative zero is not a valid slice index", parts[1])
 		}
 		end, err := strconv.Atoi(parts[1])
 		if err != nil {
@@ -1348,6 +1573,7 @@ func parseSliceSegment(content string) (segment, error) {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("slice end index out of range: %d", end), parts[1])
 		}
 		slice.end = end
+		hasEnd = true
 	}
 
 	// 解析步长
@@ -1355,18 +1581,27 @@ func parseSliceSegment(content string) (segment, error) {
 		if !validateIntegerLiteral(parts[2]) {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice step: %s", parts[2]), parts[2])
 		}
+		// Reject -0 (negative zero) per RFC 9535
+		if parts[2] == "-0" {
+			return nil, NewError(ErrSyntax, "negative zero is not a valid slice step", parts[2])
+		}
 		step, err := strconv.Atoi(parts[2])
 		if err != nil {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("invalid slice step: %s", parts[2]), parts[2])
 		}
 		if step == 0 {
-			return nil, NewError(ErrSyntax, "slice step cannot be zero", parts[2])
-		}
-		if step < -9007199254740991 || step > 9007199254740991 {
+			// RFC 9535: zero step - the slice selects no elements (returns empty)
+			// Store step as 0 to signal this behavior
+			slice.step = 0
+		} else if step < -9007199254740991 || step > 9007199254740991 {
 			return nil, NewError(ErrSyntax, fmt.Sprintf("slice step out of range: %d", step), parts[2])
+		} else {
+			slice.step = step
 		}
-		slice.step = step
 	}
+
+	slice.hasStart = hasStart
+	slice.hasEnd = hasEnd
 
 	return slice, nil
 }

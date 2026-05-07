@@ -278,6 +278,7 @@ func (s *recursiveSegment) String() string {
 // 切片段
 type sliceSegment struct {
 	start, end, step int
+	hasStart, hasEnd bool
 }
 
 // 计算切片范围的实际索引
@@ -311,7 +312,8 @@ func (s *sliceSegment) normalizeRange(length int) (start, end, step int) {
 
 	// 处理起始索引
 	start = s.start
-	if start == 0 {
+	if !s.hasStart {
+		// Default start: 0 for positive step, length-1 for negative step
 		if step > 0 {
 			start = 0
 		} else {
@@ -336,7 +338,8 @@ func (s *sliceSegment) normalizeRange(length int) (start, end, step int) {
 
 	// 处理结束索引
 	end = s.end
-	if end == 0 {
+	if !s.hasEnd {
+		// Default end: length for positive step, -1 for negative step
 		if step > 0 {
 			end = length
 		} else {
@@ -418,6 +421,11 @@ func (s *sliceSegment) evaluate(value interface{}) ([]interface{}, error) {
 	// 检查值是否为数组
 	arr, ok := value.([]interface{})
 	if !ok {
+		return []interface{}{}, nil
+	}
+
+	// RFC 9535: zero step selects no elements
+	if s.step == 0 {
 		return []interface{}{}, nil
 	}
 
