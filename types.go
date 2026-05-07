@@ -137,9 +137,17 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 		// Build the path expression
 		var pathExpr string
 		if cond.isRoot {
-			pathExpr = "$" + cond.field
+			if strings.HasPrefix(cond.field, "..") {
+				pathExpr = "$" + cond.field
+			} else {
+				pathExpr = "$." + cond.field
+			}
 		} else {
-			pathExpr = cond.field
+			if strings.HasPrefix(cond.field, "..") {
+				pathExpr = "@" + cond.field
+			} else {
+				pathExpr = "@." + cond.field
+			}
 		}
 
 		// Evaluate the path
@@ -148,11 +156,14 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 		if cond.isRoot {
 			results, err = Query(root, pathExpr)
 		} else {
-			// For relative paths, wrap the item and adjust the path
-			// e.g., @.field.* becomes $[0].field.* when evaluated against item
-			adjustedPath := "$" + pathExpr
-			tempRoot := map[string]interface{}{"_": item}
-			adjustedPath = "$._" + strings.TrimPrefix(pathExpr, "@")
+			// For relative paths, wrap the item in an array and adjust the path
+			tempRoot := []interface{}{item}
+			var adjustedPath string
+			if strings.HasPrefix(cond.field, "..") {
+				adjustedPath = "$[0]" + cond.field
+			} else {
+				adjustedPath = "$[0]." + cond.field
+			}
 			results, err = Query(tempRoot, adjustedPath)
 		}
 		if err != nil {
@@ -301,6 +312,45 @@ func evaluateSingleCondition(cond filterCondition, item interface{}, root interf
 			return false, fmt.Errorf("invalid regex pattern: %s", pattern)
 		}
 		return re.MatchString(str), nil
+	case "not_match":
+		// Negated match: returns true if string does NOT match the pattern
+		str, ok := value.(string)
+		if !ok {
+			return true, nil
+		}
+		pattern, ok := resolvedValue.(string)
+		if !ok {
+			return true, nil
+		}
+		goPattern, err := IRegexpToGoRegexp(pattern)
+		if err != nil {
+			return true, nil
+		}
+		goPattern = "^(" + goPattern + ")$"
+		re, err := regexp.Compile(goPattern)
+		if err != nil {
+			return true, nil
+		}
+		return !re.MatchString(str), nil
+	case "not_search":
+		// Negated search: returns true if string does NOT contain a match
+		str, ok := value.(string)
+		if !ok {
+			return true, nil
+		}
+		pattern, ok := resolvedValue.(string)
+		if !ok {
+			return true, nil
+		}
+		goPattern, err := IRegexpToGoRegexp(pattern)
+		if err != nil {
+			return true, nil
+		}
+		re, err := regexp.Compile(goPattern)
+		if err != nil {
+			return true, nil
+		}
+		return !re.MatchString(str), nil
 	default:
 		result, err := compareValues(value, cond.operator, resolvedValue)
 		if err != nil {
@@ -473,45 +523,65 @@ func evaluateFilterFunction(funcName, argsStr string, item interface{}, root int
 	resolvedArgs := make([]interface{}, len(args))
 	for i, arg := range args {
 		if str, ok := arg.(string); ok {
+			// Normalize whitespace in paths (e.g., "$ [0] .a" -> "$[0].a")
+			if strings.HasPrefix(str, "$") || strings.HasPrefix(str, "@") {
+				str = normalizePathWhitespace(str)
+			}
 			if str == "@" {
 				resolvedArgs[i] = item
 			} else if str == "$" {
 				resolvedArgs[i] = root
 			} else if strings.HasPrefix(str, "@") {
 				// Evaluate @.path or @[...] against the current item
-				pathExpr := "$" + strings.TrimPrefix(str, "@")
 				tempRoot := []interface{}{item}
 				adjustedPath := "$[0]" + strings.TrimPrefix(str, "@")
 				results, err := Query(tempRoot, adjustedPath)
 				if err != nil {
 					resolvedArgs[i] = nil
-				} else if len(results) == 1 {
-					resolvedArgs[i] = results[0].Value
-				} else if len(results) > 1 {
-					values := make([]interface{}, len(results))
-					for j, r := range results {
-						values[j] = r.Value
-					}
-					resolvedArgs[i] = values
 				} else {
-					resolvedArgs[i] = nil
+					// For count() and value(), pass the nodelist as an array
+					if funcName == "count" || funcName == "value" {
+						values := make([]interface{}, len(results))
+						for j, r := range results {
+							values[j] = r.Value
+						}
+						resolvedArgs[i] = values
+					} else if len(results) == 1 {
+						resolvedArgs[i] = results[0].Value
+					} else if len(results) > 1 {
+						values := make([]interface{}, len(results))
+						for j, r := range results {
+							values[j] = r.Value
+						}
+						resolvedArgs[i] = values
+					} else {
+						resolvedArgs[i] = nil
+					}
 				}
-				_ = pathExpr
 			} else if strings.HasPrefix(str, "$") {
 				// Evaluate $.path or $[...] against the root
 				results, err := Query(root, str)
 				if err != nil {
 					resolvedArgs[i] = nil
-				} else if len(results) == 1 {
-					resolvedArgs[i] = results[0].Value
-				} else if len(results) > 1 {
-					values := make([]interface{}, len(results))
-					for j, r := range results {
-						values[j] = r.Value
-					}
-					resolvedArgs[i] = values
 				} else {
-					resolvedArgs[i] = nil
+					// For count() and value(), pass the nodelist as an array
+					if funcName == "count" || funcName == "value" {
+						values := make([]interface{}, len(results))
+						for j, r := range results {
+							values[j] = r.Value
+						}
+						resolvedArgs[i] = values
+					} else if len(results) == 1 {
+						resolvedArgs[i] = results[0].Value
+					} else if len(results) > 1 {
+						values := make([]interface{}, len(results))
+						for j, r := range results {
+							values[j] = r.Value
+						}
+						resolvedArgs[i] = values
+					} else {
+						resolvedArgs[i] = nil
+					}
 				}
 			} else {
 				resolvedArgs[i] = arg
@@ -539,4 +609,51 @@ func evaluateFilterFunction(funcName, argsStr string, item interface{}, root int
 	}
 
 	return result, nil
+}
+
+// normalizePathWhitespace removes whitespace from paths while preserving brackets and quoted strings
+func normalizePathWhitespace(path string) string {
+	var result []byte
+	inQuotes := false
+	inSingleQuotes := false
+	inBrackets := false
+	for i := 0; i < len(path); i++ {
+		ch := path[i]
+		if (inQuotes || inSingleQuotes) && ch == '\\' && i+1 < len(path) {
+			result = append(result, ch)
+			i++
+			result = append(result, path[i])
+			continue
+		}
+		if ch == '"' && !inSingleQuotes {
+			inQuotes = !inQuotes
+			result = append(result, ch)
+			continue
+		}
+		if ch == '\'' && !inQuotes {
+			inSingleQuotes = !inSingleQuotes
+			result = append(result, ch)
+			continue
+		}
+		if inQuotes || inSingleQuotes {
+			result = append(result, ch)
+			continue
+		}
+		if ch == '[' {
+			inBrackets = true
+			result = append(result, ch)
+			continue
+		}
+		if ch == ']' {
+			inBrackets = false
+			result = append(result, ch)
+			continue
+		}
+		// Skip whitespace outside of brackets and quotes
+		if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') && !inBrackets {
+			continue
+		}
+		result = append(result, ch)
+	}
+	return string(result)
 }

@@ -104,7 +104,8 @@ func parseFunctionArgsList(argsStr string) ([]interface{}, error) {
 	var currentArg strings.Builder
 	var inQuote bool
 	var quoteChar rune
-	depth := 0
+	parenDepth := 0
+	bracketDepth := 0
 
 	for i := 0; i < len(argsStr); i++ {
 		ch := rune(argsStr[i])
@@ -131,13 +132,19 @@ func parseFunctionArgsList(argsStr string) ([]interface{}, error) {
 				// 其他转义序列，保持原样
 				currentArg.WriteRune(ch)
 			}
+		case ch == '[' && !inQuote:
+			bracketDepth++
+			currentArg.WriteRune(ch)
+		case ch == ']' && !inQuote:
+			bracketDepth--
+			currentArg.WriteRune(ch)
 		case ch == '(' && !inQuote:
-			depth++
+			parenDepth++
 			currentArg.WriteRune(ch)
 		case ch == ')' && !inQuote:
-			depth--
+			parenDepth--
 			currentArg.WriteRune(ch)
-		case ch == ',' && !inQuote && depth == 0:
+		case ch == ',' && !inQuote && parenDepth == 0 && bracketDepth == 0:
 			arg := strings.TrimSpace(currentArg.String())
 			if arg != "" {
 				parsedArg, err := parseSingleFunctionArg(arg)
@@ -206,6 +213,11 @@ func parseRecursive(path string) ([]segment, error) {
 	// Reject bare recursive descent: $..
 	if path == "" {
 		return nil, NewError(ErrSyntax, "bare recursive descent is not allowed", "..")
+	}
+
+	// Reject whitespace after recursive descent: $.. a
+	if path[0] == ' ' || path[0] == '\t' || path[0] == '\n' || path[0] == '\r' {
+		return nil, NewError(ErrSyntax, "whitespace is not allowed between recursive descent and member name", "..")
 	}
 
 	var segments []segment
@@ -417,7 +429,8 @@ func parseBracketSegment(content string) (segment, error) {
 
 	// Reject space-separated indices: $[0 2]
 	// After trimming, check if content looks like "0 2" (numbers separated by space)
-	if strings.Contains(content, " ") && !strings.Contains(content, ",") && !strings.HasPrefix(content, "?") && !strings.HasPrefix(content, "'") && !strings.HasPrefix(content, "\"") {
+	// But allow whitespace in slice expressions (e.g., "1 :5:2", "1: 5:2")
+	if strings.Contains(content, " ") && !strings.Contains(content, ",") && !strings.HasPrefix(content, "?") && !strings.HasPrefix(content, "'") && !strings.HasPrefix(content, "\"") && !strings.Contains(content, ":") {
 		// Check if it looks like space-separated tokens (not just whitespace in a string)
 		parts := strings.Fields(content)
 		if len(parts) > 1 {
@@ -432,6 +445,10 @@ func parseBracketSegment(content string) (segment, error) {
 
 	// 处理过滤器表达式
 	if strings.HasPrefix(content, "?") {
+		// Check if there are multiple selectors (commas at top level)
+		if hasTopLevelComma(content) {
+			return parseMultiIndexSegment(content)
+		}
 		return parseFilterSegment(content[1:])
 	}
 
@@ -449,6 +466,66 @@ func parseBracketSegment(content string) (segment, error) {
 
 	// 处理索引或名称
 	return parseIndexOrName(content)
+}
+
+// hasTopLevelComma checks if content has commas at the top level (not inside parentheses or quotes)
+func hasTopLevelComma(content string) bool {
+	inQuotes := false
+	inSingleQuotes := false
+	parenDepth := 0
+	for i := 0; i < len(content); i++ {
+		ch := content[i]
+		if (inQuotes || inSingleQuotes) && ch == '\\' && i+1 < len(content) {
+			i++ // skip escaped character
+			continue
+		}
+		if ch == '"' && !inSingleQuotes {
+			inQuotes = !inQuotes
+		} else if ch == '\'' && !inQuotes {
+			inSingleQuotes = !inSingleQuotes
+		} else if !inQuotes && !inSingleQuotes {
+			if ch == '(' {
+				parenDepth++
+			} else if ch == ')' {
+				parenDepth--
+			} else if ch == ',' && parenDepth == 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// splitTopLevel splits content by the given delimiter at the top level (not inside parentheses or quotes)
+func splitTopLevel(content string, delimiter byte) []string {
+	var parts []string
+	inQuotes := false
+	inSingleQuotes := false
+	parenDepth := 0
+	start := 0
+	for i := 0; i < len(content); i++ {
+		ch := content[i]
+		if (inQuotes || inSingleQuotes) && ch == '\\' && i+1 < len(content) {
+			i++ // skip escaped character
+			continue
+		}
+		if ch == '"' && !inSingleQuotes {
+			inQuotes = !inQuotes
+		} else if ch == '\'' && !inQuotes {
+			inSingleQuotes = !inSingleQuotes
+		} else if !inQuotes && !inSingleQuotes {
+			if ch == '(' {
+				parenDepth++
+			} else if ch == ')' {
+				parenDepth--
+			} else if ch == delimiter && parenDepth == 0 {
+				parts = append(parts, content[start:i])
+				start = i + 1
+			}
+		}
+	}
+	parts = append(parts, content[start:])
+	return parts
 }
 
 // 标准化过滤器表达式
@@ -662,6 +739,14 @@ func negateNode(node exprNode) (exprNode, error) {
 			newCond.operator = "not_exists"
 		case "not_exists":
 			newCond.operator = "exists"
+		case "match":
+			newCond.operator = "not_match"
+		case "not_match":
+			newCond.operator = "match"
+		case "search":
+			newCond.operator = "not_search"
+		case "not_search":
+			newCond.operator = "search"
 		default:
 			return nil, NewError(ErrInvalidFilter, fmt.Sprintf("cannot negate operator: %s", newCond.operator), "")
 		}
@@ -689,6 +774,27 @@ func negateNode(node exprNode) (exprNode, error) {
 	default:
 		return nil, NewError(ErrInvalidFilter, "cannot negate expression", "")
 	}
+}
+
+// normalizeFilterWhitespace handles whitespace in filter expressions
+// Removes whitespace between ! and ( to support expressions like "!\n(@.a=='b')"
+func normalizeFilterWhitespace(content string) string {
+	if len(content) < 2 {
+		return content
+	}
+	// Check if content starts with ! followed by whitespace and then (
+	if content[0] == '!' {
+		// Find the first non-whitespace character after !
+		i := 1
+		for i < len(content) && (content[i] == ' ' || content[i] == '\t' || content[i] == '\n' || content[i] == '\r') {
+			i++
+		}
+		if i < len(content) && content[i] == '(' {
+			// Remove whitespace between ! and (
+			return "!" + content[i:]
+		}
+	}
+	return content
 }
 
 // 解析过滤器表达式
@@ -732,6 +838,10 @@ func parseFilterSegment(content string) (segment, error) {
 			return nil, NewError(ErrInvalidFilter, fmt.Sprintf("invalid filter syntax: %s", content), content)
 		}
 	}
+
+	// Normalize whitespace: remove whitespace between ! and (
+	// e.g., "!\n(@.a=='b')" becomes "(!@.a=='b')"
+	content = normalizeFilterWhitespace(content)
 
 	// 取过滤器内容
 	var filterContent string
@@ -986,10 +1096,17 @@ func parseFilterCondition(content string) (filterCondition, error) {
 		}
 
 		// Strip field prefix (@ or $)
-		field = strings.TrimPrefix(field, "@.")
-		field = strings.TrimPrefix(field, "$.")
-		field = strings.TrimPrefix(field, "@")
-		field = strings.TrimPrefix(field, "$")
+		// Handle @.. (descendant) before @. to avoid incorrect stripping
+		if strings.HasPrefix(field, "@..") {
+			field = field[1:] // strip just @, leaving ..
+		} else if strings.HasPrefix(field, "$..") {
+			field = field[1:] // strip just $, leaving ..
+		} else {
+			field = strings.TrimPrefix(field, "@.")
+			field = strings.TrimPrefix(field, "$.")
+			field = strings.TrimPrefix(field, "@")
+			field = strings.TrimPrefix(field, "$")
+		}
 		return filterCondition{
 			field:    field,
 			operator: "exists",
@@ -1004,17 +1121,42 @@ func parseFilterCondition(content string) (filterCondition, error) {
 
 	// Check if the left side is a function call (e.g., length(@.a) == value($..c), count(@..*)>2)
 	if leftFuncName, leftArgsStr, isLeftFunc := tryParseFunctionCall(left); isLeftFunc {
-		// Left side is a function call - store for runtime evaluation
-		_ = leftFuncName
-		_ = leftArgsStr
+		// Reject match/search results being compared with booleans
+		if leftFuncName == "match" || leftFuncName == "search" {
+			if operator == "==" || operator == "!=" {
+				if right == "true" || right == "false" {
+					return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("%s() result cannot be compared with boolean", leftFuncName), content)
+				}
+			}
+		}
+
+		// Validate function arguments
+		if leftFuncName == "match" || leftFuncName == "search" {
+			// For match/search, only validate param count (not types)
+			if err := validateFunctionParamCount(leftFuncName, leftArgsStr); err != nil {
+				return filterCondition{}, NewError(ErrInvalidFilter, err.Error(), content)
+			}
+		} else {
+			if err := validateFunctionArgs(leftFuncName, leftArgsStr); err != nil {
+				return filterCondition{}, NewError(ErrInvalidFilter, err.Error(), content)
+			}
+		}
 
 		// Parse the right side value
 		parsedValue, err := parseFilterValue(right)
 		if err != nil {
 			// Right side might also be a function call
 			if rightFuncName, rightArgsStr, isRightFunc := tryParseFunctionCall(right); isRightFunc {
-				_ = rightFuncName
-				_ = rightArgsStr
+				// Validate right side function arguments
+				if rightFuncName == "match" || rightFuncName == "search" {
+					if err := validateFunctionParamCount(rightFuncName, rightArgsStr); err != nil {
+						return filterCondition{}, NewError(ErrInvalidFilter, err.Error(), content)
+					}
+				} else {
+					if err := validateFunctionArgs(rightFuncName, rightArgsStr); err != nil {
+						return filterCondition{}, NewError(ErrInvalidFilter, err.Error(), content)
+					}
+				}
 				// Both sides are function calls - store the whole expression for runtime evaluation
 				return filterCondition{
 					field:    left,
@@ -1155,6 +1297,80 @@ func hasTopLevelOperator(content string) bool {
 	return false
 }
 
+// validateFunctionArgs validates function arguments per RFC 9535 rules
+func validateFunctionArgs(funcName, argsStr string) error {
+	args, err := parseFunctionArgsList(argsStr)
+	if err != nil {
+		return fmt.Errorf("invalid function arguments: %v", err)
+	}
+
+	switch funcName {
+	case "length":
+		if len(args) != 1 {
+			return fmt.Errorf("length() requires exactly 1 argument")
+		}
+		// length() argument must be a singular query (not non-singular)
+		// But allow function calls like value() as arguments
+		if argStr, ok := args[0].(string); ok {
+			// Allow function calls (e.g., value($..c))
+			if _, _, isFunc := tryParseFunctionCall(argStr); isFunc {
+				// Function calls are allowed as arguments
+			} else if isNonSingularQuery(argStr) {
+				return fmt.Errorf("length() argument must be a singular query")
+			}
+		}
+	case "count":
+		if len(args) != 1 {
+			return fmt.Errorf("count() requires exactly 1 argument")
+		}
+		// count() argument must be a nodelist (path starting with @ or $)
+		argStr, ok := args[0].(string)
+		if !ok {
+			return fmt.Errorf("count() argument must be a nodelist")
+		}
+		if !strings.HasPrefix(argStr, "@") && !strings.HasPrefix(argStr, "$") {
+			return fmt.Errorf("count() argument must be a nodelist")
+		}
+	case "value":
+		if len(args) != 1 {
+			return fmt.Errorf("value() requires exactly 1 argument")
+		}
+		// value() argument must be a nodelist (path starting with @ or $)
+		argStr, ok := args[0].(string)
+		if !ok {
+			return fmt.Errorf("value() argument must be a nodelist")
+		}
+		if !strings.HasPrefix(argStr, "@") && !strings.HasPrefix(argStr, "$") {
+			return fmt.Errorf("value() argument must be a nodelist")
+		}
+	case "match", "search":
+		if len(args) != 2 {
+			return fmt.Errorf("%s() requires exactly 2 arguments", funcName)
+		}
+	}
+	return nil
+}
+
+// validateFunctionParamCount validates only the parameter count for functions
+func validateFunctionParamCount(funcName, argsStr string) error {
+	args, err := parseFunctionArgsList(argsStr)
+	if err != nil {
+		return fmt.Errorf("invalid function arguments: %v", err)
+	}
+
+	switch funcName {
+	case "length", "count", "value":
+		if len(args) != 1 {
+			return fmt.Errorf("%s() requires exactly 1 argument", funcName)
+		}
+	case "match", "search":
+		if len(args) != 2 {
+			return fmt.Errorf("%s() requires exactly 2 arguments", funcName)
+		}
+	}
+	return nil
+}
+
 // parseFilterFunctionCall 解析过滤器中的函数调用
 func parseFilterFunctionCall(funcName, argsStr string) (filterCondition, error) {
 	// 解析参数
@@ -1163,23 +1379,24 @@ func parseFilterFunctionCall(funcName, argsStr string) (filterCondition, error) 
 		return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("invalid function arguments: %v", err), funcName+"("+argsStr+")")
 	}
 
+	// Validate function arguments (but not for match/search - they accept any types)
+	if funcName != "match" && funcName != "search" {
+		if err := validateFunctionArgs(funcName, argsStr); err != nil {
+			return filterCondition{}, NewError(ErrInvalidFilter, err.Error(), funcName+"("+argsStr+")")
+		}
+	}
+
 	// 对于 match 和 search 函数，需要两个参数
 	if funcName == "match" || funcName == "search" {
 		if len(args) != 2 {
 			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("%s() requires exactly 2 arguments", funcName), funcName+"("+argsStr+")")
 		}
 
-		// 第一个参数是字段路径
-		field, ok := args[0].(string)
-		if !ok {
-			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("%s() first argument must be a string", funcName), funcName+"("+argsStr+")")
-		}
+		// 第一个参数是字段路径或值
+		field := fmt.Sprintf("%v", args[0])
 
 		// 第二个参数是模式
-		pattern, ok := args[1].(string)
-		if !ok {
-			return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("%s() second argument must be a string", funcName), funcName+"("+argsStr+")")
-		}
+		pattern := fmt.Sprintf("%v", args[1])
 
 		return filterCondition{
 			field:    strings.TrimPrefix(field, "@."),
@@ -1189,6 +1406,10 @@ func parseFilterFunctionCall(funcName, argsStr string) (filterCondition, error) 
 	}
 
 	// 对于其他函数，创建一个通用的函数调用条件
+	// count, length, value must be used in comparisons (not standalone)
+	if funcName == "count" || funcName == "length" || funcName == "value" {
+		return filterCondition{}, NewError(ErrInvalidFilter, fmt.Sprintf("%s() result must be compared", funcName), funcName+"("+argsStr+")")
+	}
 	return filterCondition{
 		field:    "",
 		operator: "function:" + funcName,
@@ -1219,6 +1440,9 @@ func compareValues(value1 interface{}, operator string, value2 interface{}) (boo
 			return value1 == value2, nil
 		case "!=":
 			return value1 != value2, nil
+		case "<=", ">=":
+			// null <= null and null >= null are true (same type comparison)
+			return value1 == value2, nil
 		default:
 			return false, nil
 		}
@@ -1287,6 +1511,9 @@ func compareValues(value1 interface{}, operator string, value2 interface{}) (boo
 				return bool1 == bool2, nil
 			case "!=":
 				return bool1 != bool2, nil
+			case "<=", ">=":
+				// true <= true, false <= false are true (same type comparison)
+				return bool1 == bool2, nil
 			default:
 				return false, nil
 			}
@@ -1436,7 +1663,7 @@ func parseMultiIndexSegment(content string) (segment, error) {
 		return nil, NewError(ErrInvalidPath, "trailing comma in multi-index segment", content)
 	}
 
-	parts := strings.Split(content, ",")
+	parts := splitTopLevel(content, ',')
 
 	// 检查空索引
 	for _, part := range parts {
@@ -1453,6 +1680,18 @@ func parseMultiIndexSegment(content string) (segment, error) {
 
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)
+
+		// 检查是否是过滤器表达式
+		if strings.HasPrefix(trimmed, "?") {
+			filter, err := parseFilterSegment(trimmed[1:])
+			if err != nil {
+				return nil, err
+			}
+			selectors = append(selectors, filter)
+			allIndices = false
+			allNames = false
+			continue
+		}
 
 		// 检查是否是通配符
 		if trimmed == "*" {
@@ -1525,8 +1764,67 @@ func parseMultiIndexSegment(content string) (segment, error) {
 	return &unionSegment{selectors: selectors}, nil
 }
 
+// removeWhitespaceAroundColons removes whitespace around colons in slice expressions
+func removeWhitespaceAroundColons(content string) string {
+	var result []byte
+	inQuotes := false
+	inSingleQuotes := false
+	for i := 0; i < len(content); i++ {
+		ch := content[i]
+		if (inQuotes || inSingleQuotes) && ch == '\\' && i+1 < len(content) {
+			result = append(result, ch)
+			i++
+			result = append(result, content[i])
+			continue
+		}
+		if ch == '"' && !inSingleQuotes {
+			inQuotes = !inQuotes
+			result = append(result, ch)
+			continue
+		}
+		if ch == '\'' && !inQuotes {
+			inSingleQuotes = !inSingleQuotes
+			result = append(result, ch)
+			continue
+		}
+		if inQuotes || inSingleQuotes {
+			result = append(result, ch)
+			continue
+		}
+		if ch == ':' {
+			// Remove trailing whitespace before colon
+			for len(result) > 0 {
+				lastByte := result[len(result)-1]
+				if lastByte == ' ' || lastByte == '\t' || lastByte == '\n' || lastByte == '\r' {
+					result = result[:len(result)-1]
+				} else {
+					break
+				}
+			}
+			result = append(result, ch)
+			// Skip whitespace after colon
+			for i+1 < len(content) {
+				nextCh := content[i+1]
+				if nextCh == ' ' || nextCh == '\t' || nextCh == '\n' || nextCh == '\r' {
+					i++
+				} else {
+					break
+				}
+			}
+		} else {
+			result = append(result, ch)
+		}
+	}
+	return string(result)
+}
+
 // 解析切片表达式
 func parseSliceSegment(content string) (segment, error) {
+	// Trim whitespace around colons (RFC 9535 allows whitespace in slice expressions)
+	content = strings.TrimSpace(content)
+	// Remove whitespace around colons
+	content = removeWhitespaceAroundColons(content)
+
 	parts := strings.Split(content, ":")
 	if len(parts) > 3 {
 		return nil, NewError(ErrSyntax, "slice has too many colons", content)
@@ -1980,9 +2278,27 @@ func parseFilterValue(valueStr string) (interface{}, error) {
 	}
 
 	// 处理字符串（带引号）
-	if (strings.HasPrefix(valueStr, "'") && strings.HasSuffix(valueStr, "'")) ||
-		(strings.HasPrefix(valueStr, "\"") && strings.HasSuffix(valueStr, "\"")) {
-		return valueStr[1 : len(valueStr)-1], nil
+	if strings.HasPrefix(valueStr, "'") && strings.HasSuffix(valueStr, "'") && len(valueStr) > 1 {
+		inner := valueStr[1 : len(valueStr)-1]
+		if !validateQuotedString(inner, '\'') {
+			return nil, fmt.Errorf("invalid string literal: %s", valueStr)
+		}
+		unescaped, err := unescapeString(inner, '\'')
+		if err != nil {
+			return nil, fmt.Errorf("invalid string literal: %s", valueStr)
+		}
+		return unescaped, nil
+	}
+	if strings.HasPrefix(valueStr, "\"") && strings.HasSuffix(valueStr, "\"") && len(valueStr) > 1 {
+		inner := valueStr[1 : len(valueStr)-1]
+		if !validateQuotedString(inner, '"') {
+			return nil, fmt.Errorf("invalid string literal: %s", valueStr)
+		}
+		unescaped, err := unescapeString(inner, '"')
+		if err != nil {
+			return nil, fmt.Errorf("invalid string literal: %s", valueStr)
+		}
+		return unescaped, nil
 	}
 
 	// Try to parse as number with RFC 9535 validation
