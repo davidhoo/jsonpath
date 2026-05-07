@@ -2152,6 +2152,10 @@ func unescapeString(s string, quoteChar byte) (string, error) {
 				if err != nil {
 					return "", fmt.Errorf("invalid unicode escape: %s", hexStr)
 				}
+				// Validate Unicode range
+				if codePoint > 0x10FFFF {
+					return "", fmt.Errorf("unicode code point out of range: %d", codePoint)
+				}
 				// Check for surrogate pairs
 				if codePoint >= 0xD800 && codePoint <= 0xDFFF {
 					// High surrogate: must be followed by low surrogate
@@ -2168,7 +2172,8 @@ func unescapeString(s string, quoteChar byte) (string, error) {
 					}
 					return "", fmt.Errorf("invalid surrogate pair")
 				}
-				result.WriteRune(rune(codePoint))
+				// Valid Unicode range, safe to convert
+				result.WriteRune(rune(codePoint)) // #nosec G115 - range validated above
 				i += 4
 				continue
 			default:
